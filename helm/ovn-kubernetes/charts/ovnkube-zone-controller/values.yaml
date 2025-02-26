@@ -6,6 +6,8 @@ logFileMaxSize: 100
 logFileMaxBackups: 5
 logFileMaxAge: 5
 libovsdbClientLogFile: ""
+cniBinDir: "/opt/cni/bin"
+cniConfDir: "/etc/cni/net.d"
 
 ## Affinity for pod assignment
 ## Ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
@@ -22,5 +24,3 @@ affinity:
               operator: In
               values:
               - "linux"
-cniBinDir: "/opt/cni/bin"
-cniConfDir: "/etc/cni/net.d"
