@@ -4,3 +4,5 @@ logFileMaxBackups: 5
 logFileMaxAge: 5
 ovnControllerLogLevel: 4
 gatewayOpts: ""
+cniBinDir: "/opt/cni/bin"
+cniConfDir: "/etc/cni/net.d"

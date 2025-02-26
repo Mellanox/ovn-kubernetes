@@ -22,3 +22,5 @@ affinity:
               operator: In
               values:
               - "linux"
+cniBinDir: "/opt/cni/bin"
+cniConfDir: "/etc/cni/net.d"

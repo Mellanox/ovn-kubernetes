@@ -29,3 +29,5 @@ affinity:
               values:
                 - ovnkube-master
         topologyKey: kubernetes.io/hostname
+cniBinDir: "/opt/cni/bin"
+cniConfDir: "/etc/cni/net.d"
