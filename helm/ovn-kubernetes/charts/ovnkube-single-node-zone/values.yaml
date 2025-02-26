@@ -7,3 +7,5 @@ logFileMaxSize: 100
 logFileMaxBackups: 5
 logFileMaxAge: 5
 libovsdbClientLogFile: ""
+cniBinDir: "/opt/cni/bin"
+cniConfDir: "/etc/cni/net.d"

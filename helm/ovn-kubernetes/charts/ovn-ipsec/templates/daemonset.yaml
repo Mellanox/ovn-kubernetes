@@ -273,6 +273,6 @@ spec:
           type: DirectoryOrCreate
       - name: host-cni-netd
         hostPath:
-          path: /etc/cni/net.d
+          path: {{ .Values.cniConfDir }}
       tolerations:
       - operator: "Exists"

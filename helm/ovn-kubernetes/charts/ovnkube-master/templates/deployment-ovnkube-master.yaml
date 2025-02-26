@@ -306,10 +306,10 @@ spec:
           path: /
       - name: host-opt-cni-bin
         hostPath:
-          path: /opt/cni/bin
+          path: {{ .Values.cniBinDir }}
       - name: host-etc-cni-netd
         hostPath:
-          path: /etc/cni/net.d
+          path: {{ .Values.cniConfDir }}
       - name: host-netns
         hostPath:
           path: /var/run/netns
