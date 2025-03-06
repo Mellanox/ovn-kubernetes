@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"time"
 
+	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/urfave/cli/v2"
 	"github.com/vishvananda/netlink"
 
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/config"
+	adminpolicybasedrouteclient "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/crd/adminpolicybasedroute/v1/apis/clientset/versioned/fake"
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/kube/mocks"
 
 	ovntest "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/testing"
@@ -17,14 +20,15 @@ import (
 	util "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/util"
 	utilMocks "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/util/mocks"
 	kapi "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("Node", func() {
-
 	Describe("validateMTU", func() {
 		var (
 			kubeMock        *mocks.Interface
@@ -650,4 +654,106 @@ var _ = Describe("Node", func() {
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
+
+	Describe("DPU Host Heartbeat", func() {
+		const (
+			uplinkName string = "enp3s0f0"
+			hostIP     string = "192.168.1.10"
+			hostCIDR   string = hostIP + "/24"
+			gwIP       string = "192.168.1.1"
+		)
+
+		var (
+			testNS ns.NetNS
+			app    *cli.App
+		)
+
+		BeforeEach(func() {
+			app = cli.NewApp()
+			app.Name = "test"
+			app.Flags = config.Flags
+		})
+
+		It("should successfully check valid heartbeat", func() {
+			heartbeatDPUHostTest(app, testNS, uplinkName, hostIP, gwIP)
+		})
+	})
 })
+
+func heartbeatDPUHostTest(app *cli.App, testNS ns.NetNS, uplinkName, hostIP, gwIP string) {
+	const (
+		clusterCIDR string = "10.1.0.0/16"
+		svcCIDR     string = "172.16.1.0/24"
+		nodeName    string = "node1"
+	)
+
+	app.Action = func(ctx *cli.Context) error {
+		fexec := ovntest.NewLooseCompareFakeExec()
+		err := util.SetExec(fexec)
+		Expect(err).NotTo(HaveOccurred())
+
+		_, err = config.InitConfig(ctx, fexec, nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		nodeAddr := v1.NodeAddress{Type: v1.NodeInternalIP, Address: hostIP}
+		existingNode := v1.Node{ObjectMeta: metav1.ObjectMeta{
+			Name: nodeName,
+		},
+			Status: v1.NodeStatus{Addresses: []v1.NodeAddress{nodeAddr}},
+		}
+
+		kubeFakeClient := fake.NewSimpleClientset(&v1.NodeList{
+			Items: []v1.Node{existingNode},
+		})
+		fakeClient := &util.OVNNodeClientset{
+			KubeClient:             kubeFakeClient,
+			AdminPolicyRouteClient: adminpolicybasedrouteclient.NewSimpleClientset(),
+		}
+
+		stop := make(chan struct{})
+		errChan := make(chan error)
+		cnnci := NewCommonNodeNetworkControllerInfo(fakeClient.KubeClient, fakeClient.AdminPolicyRouteClient, nil, nil, nodeName, nil)
+		nc := newDefaultNodeNetworkController(cnnci, stop, errChan, nil, nil)
+
+		contx, cancel := context.WithCancel(context.Background())
+
+		// check that the heartbeat fails when the lease is not created
+		err = nc.checkDPUNodeHeartbeat(contx, 10*time.Millisecond, 500*time.Millisecond)
+		Expect(err).To(HaveOccurred())
+
+		// simulate dpu node heartbeat
+		nodeErrChan := make(chan error)
+		nodeNC := newDefaultNodeNetworkController(NewCommonNodeNetworkControllerInfo(kubeFakeClient, nil, nil, nil, nodeName, nil), nil, nodeErrChan, nil, nil)
+		err = nodeNC.startDPUNodeheartbeat(contx, fmt.Sprintf("%s-%s", defaultLeaseNS, config.Default.Zone), 1, 5*time.Millisecond)
+		Expect(err).NotTo(HaveOccurred())
+
+		// check that the heartbeat succeeds when the lease is created
+		err = nc.checkDPUNodeHeartbeat(contx, 10*time.Millisecond, 500*time.Millisecond)
+		Expect(err).NotTo(HaveOccurred())
+
+		// wait 1 second to ensure the lease is renewed
+		time.Sleep(1 * time.Second)
+
+		// cancel the context to stop the heartbeat
+		cancel()
+
+		//verify that no errors were reported
+		err = <-errChan
+		Expect(err).NotTo(HaveOccurred())
+
+		err = <-nodeErrChan
+		Expect(err).NotTo(HaveOccurred())
+		return nil
+	}
+
+	err := app.Run([]string{
+		app.Name,
+		"--cluster-subnets=" + clusterCIDR,
+		"--init-gateways",
+		"--gateway-interface=" + uplinkName,
+		"--k8s-service-cidrs=" + svcCIDR,
+		"--ovnkube-node-mode=dpu-host",
+		"--ovnkube-node-mgmt-port-netdev=pf0vf0",
+	})
+	Expect(err).NotTo(HaveOccurred())
+}
