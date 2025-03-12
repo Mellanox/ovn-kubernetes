@@ -6,7 +6,6 @@ import (
 	"net"
 	"time"
 
-	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/urfave/cli/v2"
 	"github.com/vishvananda/netlink"
 
@@ -660,12 +659,10 @@ var _ = Describe("Node", func() {
 			uplinkName string = "enp3s0f0"
 			hostIP     string = "192.168.1.10"
 			hostCIDR   string = hostIP + "/24"
-			gwIP       string = "192.168.1.1"
 		)
 
 		var (
-			testNS ns.NetNS
-			app    *cli.App
+			app *cli.App
 		)
 
 		BeforeEach(func() {
@@ -675,12 +672,12 @@ var _ = Describe("Node", func() {
 		})
 
 		It("should successfully check valid heartbeat", func() {
-			heartbeatDPUHostTest(app, testNS, uplinkName, hostIP, gwIP)
+			heartbeatDPUHostTest(app, uplinkName, hostIP)
 		})
 	})
 })
 
-func heartbeatDPUHostTest(app *cli.App, testNS ns.NetNS, uplinkName, hostIP, gwIP string) {
+func heartbeatDPUHostTest(app *cli.App, uplinkName, hostIP string) {
 	const (
 		clusterCIDR string = "10.1.0.0/16"
 		svcCIDR     string = "172.16.1.0/24"
@@ -718,17 +715,17 @@ func heartbeatDPUHostTest(app *cli.App, testNS ns.NetNS, uplinkName, hostIP, gwI
 		contx, cancel := context.WithCancel(context.Background())
 
 		// check that the heartbeat fails when the lease is not created
-		err = nc.checkDPUNodeHeartbeat(contx, 10*time.Millisecond, 500*time.Millisecond)
+		err = nc.checkDPUNodeHeartbeat(contx, config.Default.Zone, defaultLeaseNS, 10*time.Millisecond, 500*time.Millisecond)
 		Expect(err).To(HaveOccurred())
 
 		// simulate dpu node heartbeat
 		nodeErrChan := make(chan error)
 		nodeNC := newDefaultNodeNetworkController(NewCommonNodeNetworkControllerInfo(kubeFakeClient, nil, nil, nil, nodeName, nil), nil, nodeErrChan, nil, nil)
-		err = nodeNC.startDPUNodeheartbeat(contx, fmt.Sprintf("%s-%s", defaultLeaseNS, config.Default.Zone), 1, 5*time.Millisecond)
+		err = nodeNC.startDPUNodeheartbeat(contx, config.Default.Zone, defaultLeaseNS, 1, 5*time.Millisecond)
 		Expect(err).NotTo(HaveOccurred())
 
 		// check that the heartbeat succeeds when the lease is created
-		err = nc.checkDPUNodeHeartbeat(contx, 10*time.Millisecond, 500*time.Millisecond)
+		err = nc.checkDPUNodeHeartbeat(contx, config.Default.Zone, defaultLeaseNS, 10*time.Millisecond, 500*time.Millisecond)
 		Expect(err).NotTo(HaveOccurred())
 
 		// wait 1 second to ensure the lease is renewed

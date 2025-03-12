@@ -1095,11 +1095,17 @@ func (nc *DefaultNodeNetworkController) Start(ctx context.Context) error {
 		}
 	} else {
 		if config.OvnKubeNode.Mode == types.NodeModeDPUHost {
+			// There is no SBDB to connect to in DPU Host mode, so we will just take the default input config zone
+			sbZone := config.Default.Zone
+			ns := config.OvnKubeNode.LeaseNS
+			if ns == "" {
+				ns = defaultLeaseNS
+			}
 			// We should wait for the dpu node to be ready before starting the cni server
 			// this impacts the readiness probe of the ovn-kube-node pod
 			// as it uses `command: ["/usr/bin/ovn-kube-util", "readiness-probe", "-t", "ovnkube-node"]`
 			// which in turn check if the file /etc/cni/net.d/10-ovn-kubernetes.conf exists
-			err = nc.checkDPUNodeHeartbeat(ctx, 60*time.Second, 300*time.Second)
+			err = nc.checkDPUNodeHeartbeat(ctx, sbZone, ns, 60*time.Second, 300*time.Second)
 			if err != nil {
 				return err
 			}
@@ -1164,9 +1170,9 @@ func (nc *DefaultNodeNetworkController) Start(ctx context.Context) error {
 		}
 		ns := config.OvnKubeNode.LeaseNS
 		if ns == "" {
-			ns = fmt.Sprintf("%s-%s", defaultLeaseNS, zone)
+			ns = defaultLeaseNS
 		}
-		if err := nc.startDPUNodeheartbeat(ctx, ns, defaultLeaseDurationSeconds, 10*time.Second); err != nil {
+		if err := nc.startDPUNodeheartbeat(ctx, zone, ns, defaultLeaseDurationSeconds, 10*time.Second); err != nil {
 			return err
 		}
 	}
@@ -1364,8 +1370,9 @@ func (nc *DefaultNodeNetworkController) validateVTEPInterfaceMTU() error {
 	return nil
 }
 
-func (nc *DefaultNodeNetworkController) startDPUNodeheartbeat(ctx context.Context, ns string, duration int, interval time.Duration) error {
-	h := newHeartbeat(nc.Kube.(*kube.Kube).KClient, nc.name, nc.errChan,
+func (nc *DefaultNodeNetworkController) startDPUNodeheartbeat(ctx context.Context, zone, ns string, duration int, interval time.Duration) error {
+	h := newHeartbeat(nc.Kube.(*kube.Kube).KClient, nc.name, zone, nc.errChan,
+		HolderIdentityOption(nc.name),
 		LeaseDurationSecondsOption(duration),
 		LeaseNSOption(ns),
 		ModeOption(types.NodeModeDPU),
@@ -1376,15 +1383,9 @@ func (nc *DefaultNodeNetworkController) startDPUNodeheartbeat(ctx context.Contex
 	return nil
 }
 
-func (nc *DefaultNodeNetworkController) checkDPUNodeHeartbeat(ctx context.Context, interval, timeout time.Duration) error {
-	// There is no SBDB to connect to in DPU Host mode, so we will just take the default input config zone
-	sbZone := config.Default.Zone
-	ns := config.OvnKubeNode.LeaseNS
-	if ns == "" {
-		ns = fmt.Sprintf("%s-%s", defaultLeaseNS, sbZone)
-	}
+func (nc *DefaultNodeNetworkController) checkDPUNodeHeartbeat(ctx context.Context, zone, ns string, interval, timeout time.Duration) error {
 	err := wait.PollUntilContextTimeout(context.Background(), 500*time.Millisecond, timeout, true, func(ctx context.Context) (bool, error) {
-		ready, err := isHeartBeatValid(ctx, nc.Kube.(*kube.Kube).KClient, ns)
+		ready, err := isHeartBeatValid(ctx, nc.Kube.(*kube.Kube).KClient, zone, ns)
 		if err != nil {
 			klog.Infof("Waiting for the dpu node to be ready: %v", err)
 			return false, nil
@@ -1399,7 +1400,7 @@ func (nc *DefaultNodeNetworkController) checkDPUNodeHeartbeat(ctx context.Contex
 	}
 
 	// Start the heartbeat for the DPU Host node
-	h := newHeartbeat(nc.Kube.(*kube.Kube).KClient, nc.name, nc.errChan,
+	h := newHeartbeat(nc.Kube.(*kube.Kube).KClient, nc.name, zone, nc.errChan,
 		LeaseNSOption(ns),
 		ModeOption(types.NodeModeDPUHost),
 		IntervalOption(interval))

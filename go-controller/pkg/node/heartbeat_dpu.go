@@ -10,6 +10,7 @@ import (
 	coordinationv1 "k8s.io/api/coordination/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 )
@@ -19,7 +20,9 @@ const (
 	// This the default value for corev1.Node leases
 	defaultLeaseDurationSeconds = 40
 	// defaultLeaseNS is the default namespace for the lease.
-	defaultLeaseNS = "dpu-lease-zone"
+	defaultLeaseNS = "dpu-node-lease"
+	// defaultLeaseZoneLabel is the label set on a lease that identifies the zone
+	defaultLeaseZoneLabel = "k8s.ovn.org/node-lease-zone"
 )
 
 type heartbeatOptions struct {
@@ -66,13 +69,14 @@ func (o IntervalOption) Apply(options *heartbeatOptions) {
 
 type heartbeat struct {
 	nodeName string
+	zone     string
 	client   kubernetes.Interface
 	lease    *coordinationv1.Lease
 	errChan  chan error
 	heartbeatOptions
 }
 
-func newHeartbeat(client kubernetes.Interface, nodeName string, errChan chan error, opts ...HeartbeatOption) *heartbeat {
+func makeOptions(opts ...HeartbeatOption) *heartbeatOptions {
 	o := &heartbeatOptions{}
 	for _, opt := range opts {
 		opt.Apply(o)
@@ -91,8 +95,15 @@ func newHeartbeat(client kubernetes.Interface, nodeName string, errChan chan err
 	if o.mode == "" {
 		o.mode = types.NodeModeDPU
 	}
+	return o
+}
+
+func newHeartbeat(client kubernetes.Interface, nodeName, zone string, errChan chan error, opts ...HeartbeatOption) *heartbeat {
+	o := makeOptions(opts...)
+
 	return &heartbeat{
 		nodeName:         nodeName,
+		zone:             zone,
 		client:           client,
 		errChan:          errChan,
 		heartbeatOptions: *o,
@@ -165,7 +176,7 @@ func (h *heartbeat) runDPUHost(ctx context.Context) error {
 				h.errChan <- nil
 				return
 			case <-ticker.C:
-				if valid, err := isHeartBeatValid(ctx, h.client, h.leaseNS); err != nil || !valid {
+				if valid, err := isHeartBeatValid(ctx, h.client, h.zone, h.leaseNS); err != nil || !valid {
 					klog.Errorf("Heartbeat lease is not valid: %v", err)
 					h.errChan <- err
 				}
@@ -206,6 +217,10 @@ func (h *heartbeat) create(ctx context.Context, leaseSpec coordinationv1.LeaseSp
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      h.nodeName,
 			Namespace: h.leaseNS,
+			Labels: map[string]string{
+				// this label sets the zone and will be used as label selector to find the lease
+				defaultLeaseZoneLabel: h.zone,
+			},
 		},
 		Spec: leaseSpec,
 	}, metav1.CreateOptions{})
@@ -221,11 +236,14 @@ func (h *heartbeat) createLeaseSpec(acquireTime, renewTime time.Time) coordinati
 	}
 }
 
-// isHeartBeatValid checks if there are any leases in the given namespace.
+// isHeartBeatValid checks if there are any leases in the given namespace with the given zone label.
 // If there are no leases, or if any lease is expired, it returns false.
 // If all leases are valid, it returns true.
-func isHeartBeatValid(ctx context.Context, client kubernetes.Interface, ns string) (bool, error) {
-	leases, err := client.CoordinationV1().Leases(ns).List(ctx, metav1.ListOptions{})
+func isHeartBeatValid(ctx context.Context, client kubernetes.Interface, zone, ns string) (bool, error) {
+	labelSelector := labels.Set{defaultLeaseZoneLabel: zone}.AsSelector()
+	leases, err := client.CoordinationV1().Leases(ns).List(ctx, metav1.ListOptions{
+		LabelSelector: labelSelector.String(),
+	})
 	if err != nil {
 		return false, err
 	}
