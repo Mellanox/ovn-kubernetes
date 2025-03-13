@@ -2,7 +2,7 @@ nameOverride: ovn-kubernetes
 
 # -- Variables related to the OVN Kubernetes Resource Injector
 ovn-kubernetes-resource-injector:
-  enabled: true
+  enabled: false
   resourceName: nvidia.com/bf3-p0-vfs
   controllerManager:
     webhook:
@@ -14,7 +14,7 @@ ovn-kubernetes-resource-injector:
 
 # -- Variables related to manifests that are deployed for nodes with DPU
 nodeWithDPUManifests:
-  enabled: true
+  enabled: false
   image:
     repository: ${OVNKUBERNETES_IMAGE}
     tag: ${TAG}
@@ -25,7 +25,7 @@ nodeWithDPUManifests:
 
 # -- Variables related to manifests that are deployed for nodes without DPU
 nodeWithoutDPUManifests:
-  enabled: true
+  enabled: false
   image:
     repository: ${OVNKUBERNETES_IMAGE}
     tag: ${TAG}
@@ -50,7 +50,7 @@ dpuManifests:
 
 # -- Variables related to manifests that are needed to setup the OVN Control Plane
 controlPlaneManifests:
-  enabled: true
+  enabled: false
   image:
     repository: ${OVNKUBERNETES_IMAGE}
     tag: ${TAG}
@@ -70,6 +70,10 @@ mtu: 1400
 global:
   # -- The name of the secret used to pull images. Applies to all relevant manifests.
   imagePullSecretName: ""
+
+# -- Variables related to common manifests used by components in both DPU and Host cluster
+commonManifests:
+  enabled: false
 
 # DPF Contract. These values are effective only for manifests related to hosts that
 # have a DPU and the DPU manifests themselves.
