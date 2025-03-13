@@ -11,6 +11,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 )
@@ -23,6 +24,10 @@ const (
 	defaultLeaseNS = "dpu-node-lease"
 	// defaultLeaseZoneLabel is the label set on a lease that identifies the zone
 	defaultLeaseZoneLabel = "k8s.ovn.org/node-lease-zone"
+	// retryInterval is the interval between retries when updating or checking the lease
+	retryInterval = 100 * time.Millisecond
+	// retryNumber is the number of retries when updating or checking the lease
+	retryNumber = 3
 )
 
 type heartbeatOptions struct {
@@ -155,9 +160,20 @@ func (h *heartbeat) runDPUNode(ctx context.Context) error {
 				h.errChan <- err
 				return
 			case <-ticker.C:
-				if err = h.update(ctx, h.createLeaseSpec(h.lease.Spec.AcquireTime.Time, time.Now())); err != nil {
-					klog.Errorf("Failed to update node lease for heartbeat: %v", err)
-					h.errChan <- err
+				if err := wait.ExponentialBackoffWithContext(ctx,
+					wait.Backoff{
+						Duration: retryInterval,
+						Factor:   1.5,
+						Steps:    retryNumber,
+						Jitter:   0.4,
+					}, func(context.Context) (done bool, err error) {
+						if err = h.update(ctx, h.createLeaseSpec(h.lease.Spec.AcquireTime.Time, time.Now())); err != nil {
+							klog.Errorf("Failed to update node lease for heartbeat: %v", err)
+							return false, nil
+						}
+						return true, nil
+					}); err != nil {
+					h.errChan <- fmt.Errorf("failed to update heartbeat lease: %w", err)
 				}
 			}
 		}
@@ -176,9 +192,25 @@ func (h *heartbeat) runDPUHost(ctx context.Context) error {
 				h.errChan <- nil
 				return
 			case <-ticker.C:
-				if valid, err := isHeartBeatValid(ctx, h.client, h.zone, h.leaseNS); err != nil || !valid {
-					klog.Errorf("Heartbeat lease is not valid: %v", err)
-					h.errChan <- err
+				if err := wait.ExponentialBackoffWithContext(ctx,
+					wait.Backoff{
+						Duration: retryInterval,
+						Factor:   1.5,
+						Steps:    retryNumber,
+						Jitter:   0.4,
+					}, func(context.Context) (done bool, err error) {
+						if valid, err := isHeartBeatValid(ctx, h.client, h.zone, h.leaseNS); err != nil || !valid {
+							klog.Errorf("Heartbeat lease is not valid: %v", err)
+							return false, nil
+						}
+						return true, nil
+					}); err != nil {
+					// if canceled context, do not send error
+					if ctx.Err() != nil {
+						h.errChan <- nil
+						return
+					}
+					h.errChan <- fmt.Errorf("failed to check heartbeat lease: %w", err)
 				}
 			}
 		}

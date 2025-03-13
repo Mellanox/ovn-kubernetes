@@ -1164,6 +1164,7 @@ func (nc *DefaultNodeNetworkController) Start(ctx context.Context) error {
 	}()
 
 	if config.OvnKubeNode.Mode == types.NodeModeDPU {
+		// TODO @souleb: This breaks ovn-central deployment, need to fix it
 		zone, err := getOVNSBZone()
 		if err != nil {
 			return fmt.Errorf("failed to get the zone name from the OVN Southbound db server, err : %w", err)
