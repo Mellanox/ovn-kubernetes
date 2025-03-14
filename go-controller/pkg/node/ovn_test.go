@@ -25,6 +25,7 @@ type FakeOVNNode struct {
 	nc         *DefaultNodeNetworkController
 	watcher    factory.NodeWatchFactory
 	stopChan   chan struct{}
+	errChan    chan error
 	recorder   *record.FakeRecorder
 	fakeClient *util.OVNNodeClientset
 	fakeExec   *ovntest.FakeExec
@@ -77,13 +78,14 @@ func (o *FakeOVNNode) init() {
 	var err error
 
 	o.stopChan = make(chan struct{})
+	o.errChan = make(chan error)
 	o.wg = &sync.WaitGroup{}
 
 	o.watcher, err = factory.NewNodeWatchFactory(o.fakeClient, fakeNodeName)
 	Expect(err).NotTo(HaveOccurred())
 
 	cnnci := NewCommonNodeNetworkControllerInfo(o.fakeClient.KubeClient, o.fakeClient.AdminPolicyRouteClient, o.watcher, o.recorder, fakeNodeName, routemanager.NewController())
-	o.nc = newDefaultNodeNetworkController(cnnci, o.stopChan, o.wg, routemanager.NewController())
+	o.nc = newDefaultNodeNetworkController(cnnci, o.stopChan, o.errChan, o.wg, routemanager.NewController())
 	// watcher is started by nodeNetworkControllerManager, not by nodeNetworkcontroller, so start it here.
 	o.watcher.Start()
 	o.nc.Start(context.TODO())

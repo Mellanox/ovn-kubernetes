@@ -74,6 +74,7 @@ type BaseNodeNetworkController struct {
 
 	// stopChan and WaitGroup per controller
 	stopChan chan struct{}
+	errChan  chan error
 	wg       *sync.WaitGroup
 }
 
@@ -114,7 +115,7 @@ type DefaultNodeNetworkController struct {
 	apbExternalRouteNodeController *apbroute.ExternalGatewayNodeController
 }
 
-func newDefaultNodeNetworkController(cnnci *CommonNodeNetworkControllerInfo, stopChan chan struct{},
+func newDefaultNodeNetworkController(cnnci *CommonNodeNetworkControllerInfo, stopChan chan struct{}, errChan chan error,
 	wg *sync.WaitGroup, routeManager *routemanager.Controller) *DefaultNodeNetworkController {
 
 	return &DefaultNodeNetworkController{
@@ -122,6 +123,7 @@ func newDefaultNodeNetworkController(cnnci *CommonNodeNetworkControllerInfo, sto
 			CommonNodeNetworkControllerInfo: *cnnci,
 			NetInfo:                         &util.DefaultNetInfo{},
 			stopChan:                        stopChan,
+			errChan:                         errChan,
 			wg:                              wg,
 		},
 		routeManager: routeManager,
@@ -129,11 +131,11 @@ func newDefaultNodeNetworkController(cnnci *CommonNodeNetworkControllerInfo, sto
 }
 
 // NewDefaultNodeNetworkController creates a new network controller for node management of the default network
-func NewDefaultNodeNetworkController(cnnci *CommonNodeNetworkControllerInfo) (*DefaultNodeNetworkController, error) {
+func NewDefaultNodeNetworkController(cnnci *CommonNodeNetworkControllerInfo, errChan chan error) (*DefaultNodeNetworkController, error) {
 	var err error
 	stopChan := make(chan struct{})
 	wg := &sync.WaitGroup{}
-	nc := newDefaultNodeNetworkController(cnnci, stopChan, wg, cnnci.routeManager)
+	nc := newDefaultNodeNetworkController(cnnci, stopChan, errChan, wg, cnnci.routeManager)
 
 	if len(config.Kubernetes.HealthzBindAddress) != 0 {
 		klog.Infof("Enable node proxy healthz server on %s", config.Kubernetes.HealthzBindAddress)
@@ -713,7 +715,7 @@ func (nc *DefaultNodeNetworkController) Start(ctx context.Context) error {
 
 	if config.OvnKubeNode.Mode != types.NodeModeDPUHost {
 		// Bootstrap flows in OVS if just normal flow is present
-                if err := bootstrapOVSFlows(nc.name); err != nil {
+		if err := bootstrapOVSFlows(nc.name); err != nil {
 			return fmt.Errorf("failed to bootstrap OVS flows: %w", err)
 		}
 	}
@@ -1092,6 +1094,22 @@ func (nc *DefaultNodeNetworkController) Start(ctx context.Context) error {
 			return err
 		}
 	} else {
+		if config.OvnKubeNode.Mode == types.NodeModeDPUHost {
+			// There is no SBDB to connect to in DPU Host mode, so we will just take the default input config zone
+			sbZone := config.Default.Zone
+			ns := config.OvnKubeNode.LeaseNS
+			if ns == "" {
+				ns = defaultLeaseNS
+			}
+			// We should wait for the dpu node to be ready before starting the cni server
+			// this impacts the readiness probe of the ovn-kube-node pod
+			// as it uses `command: ["/usr/bin/ovn-kube-util", "readiness-probe", "-t", "ovnkube-node"]`
+			// which in turn check if the file /etc/cni/net.d/10-ovn-kubernetes.conf exists
+			err = nc.checkDPUNodeHeartbeat(ctx, sbZone, ns, 60*time.Second, 300*time.Second)
+			if err != nil {
+				return err
+			}
+		}
 		// start the cni server
 		if err := cniServer.Start(cni.ServerRunDir); err != nil {
 			return err
@@ -1144,6 +1162,21 @@ func (nc *DefaultNodeNetworkController) Start(ctx context.Context) error {
 		defer nc.wg.Done()
 		ovspinning.Run(nc.stopChan)
 	}()
+
+	if config.OvnKubeNode.Mode == types.NodeModeDPU {
+		// TODO @souleb: This breaks ovn-central deployment, need to fix it
+		zone, err := getOVNSBZone()
+		if err != nil {
+			return fmt.Errorf("failed to get the zone name from the OVN Southbound db server, err : %w", err)
+		}
+		ns := config.OvnKubeNode.LeaseNS
+		if ns == "" {
+			ns = defaultLeaseNS
+		}
+		if err := nc.startDPUNodeheartbeat(ctx, zone, ns, defaultLeaseDurationSeconds, 10*time.Second); err != nil {
+			return err
+		}
+	}
 
 	klog.Infof("Default node network controller initialized and ready.")
 	return nil
@@ -1334,6 +1367,46 @@ func (nc *DefaultNodeNetworkController) validateVTEPInterfaceMTU() error {
 		}
 		klog.V(2).Infof("MTU (%d) of network interface %s is big enough to deal with Geneve header overhead (sum %d). ",
 			mtu, interfaceName, requiredMTU)
+	}
+	return nil
+}
+
+func (nc *DefaultNodeNetworkController) startDPUNodeheartbeat(ctx context.Context, zone, ns string, duration int, interval time.Duration) error {
+	h := newHeartbeat(nc.Kube.(*kube.Kube).KClient, nc.name, zone, nc.errChan,
+		HolderIdentityOption(nc.name),
+		LeaseDurationSecondsOption(duration),
+		LeaseNSOption(ns),
+		ModeOption(types.NodeModeDPU),
+		IntervalOption(interval))
+	if err := h.run(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (nc *DefaultNodeNetworkController) checkDPUNodeHeartbeat(ctx context.Context, zone, ns string, interval, timeout time.Duration) error {
+	err := wait.PollUntilContextTimeout(context.Background(), 500*time.Millisecond, timeout, true, func(ctx context.Context) (bool, error) {
+		ready, err := isHeartBeatValid(ctx, nc.Kube.(*kube.Kube).KClient, zone, ns)
+		if err != nil {
+			klog.Infof("Waiting for the dpu node to be ready: %v", err)
+			return false, nil
+		}
+		if ready {
+			return true, nil
+		}
+		return false, nil
+	})
+	if err != nil {
+		return fmt.Errorf("timed out waiting for the dpu node to be ready: %v", err)
+	}
+
+	// Start the heartbeat for the DPU Host node
+	h := newHeartbeat(nc.Kube.(*kube.Kube).KClient, nc.name, zone, nc.errChan,
+		LeaseNSOption(ns),
+		ModeOption(types.NodeModeDPUHost),
+		IntervalOption(interval))
+	if err = h.run(ctx); err != nil {
+		return err
 	}
 	return nil
 }

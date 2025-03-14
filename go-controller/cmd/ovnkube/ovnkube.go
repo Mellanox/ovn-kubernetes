@@ -435,6 +435,7 @@ func runOvnKube(ctx context.Context, runMode *ovnkubeRunMode, ovnClientset *util
 	// there might be dependencies across components when starting so run them
 	// in separate threads
 	wg := &sync.WaitGroup{}
+	errChan := make(chan error)
 	var cancel context.CancelFunc
 	ctx, cancel = context.WithCancel(ctx)
 	var managerErr, controllerErr, nodeErr error
@@ -536,7 +537,8 @@ func runOvnKube(ctx context.Context, runMode *ovnkubeRunMode, ovnClientset *util
 				runMode.identity,
 				wg,
 				eventRecorder,
-				routemanager.NewController())
+				routemanager.NewController(),
+				errChan)
 			if err != nil {
 				nodeErr = fmt.Errorf("failed to create node network controller: %w", err)
 				return
@@ -568,19 +570,35 @@ func runOvnKube(ctx context.Context, runMode *ovnkubeRunMode, ovnClientset *util
 	}
 
 	// run until cancelled
-	<-ctx.Done()
+	select {
+	case <-ctx.Done():
+		stop(cancel, watchFactory, wg)
+		err = utilerrors.Join(managerErr, controllerErr, nodeErr)
+		if err != nil {
+			return fmt.Errorf("failed to run ovnkube: %w", err)
+		} else {
+			// wait for all go routines to finish
+			err := <-errChan
+			if err != nil {
+				return fmt.Errorf("error received from channel: %w", err)
+			}
+		}
+	case err = <-errChan:
+		stop(cancel, watchFactory, wg)
+		if err != nil {
+			return fmt.Errorf("error received from channel: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func stop(cancel context.CancelFunc, watchFactory *factory.WatchFactory, wg *sync.WaitGroup) {
 	klog.Infof("Stopping ovnkube...")
 	cancel()
 	watchFactory.Shutdown()
 	wg.Wait()
 	klog.Infof("Stopped ovnkube")
-
-	err = utilerrors.Join(managerErr, controllerErr, nodeErr)
-	if err != nil {
-		return fmt.Errorf("failed to run ovnkube: %w", err)
-	}
-
-	return nil
 }
 
 // newWatchFactory returns the proper watch factory to use depending on the run
