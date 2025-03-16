@@ -30,11 +30,14 @@ rules:
 - apiGroups: [""]
   resources:
   - namespaces
-  - nodes
   - pods
   - services
   - endpoints
   verbs: [ "get", "list", "watch" ]
+- apiGroups: [""]
+  resources:
+  - nodes
+  verbs: [ "get", "list", "watch", "patch", "update" ]
 - apiGroups: ["coordination.k8s.io"]
   resources:
   - leases

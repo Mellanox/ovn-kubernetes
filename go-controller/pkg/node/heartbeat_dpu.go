@@ -6,11 +6,15 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/kube"
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/types"
+
 	coordinationv1 "k8s.io/api/coordination/v1"
+	kapi "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	kerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
@@ -73,11 +77,12 @@ func (o IntervalOption) Apply(options *heartbeatOptions) {
 }
 
 type heartbeat struct {
-	nodeName string
-	zone     string
-	client   kubernetes.Interface
-	lease    *coordinationv1.Lease
-	errChan  chan error
+	nodeName  string
+	zone      string
+	client    kube.Interface
+	clientSet kubernetes.Interface
+	lease     *coordinationv1.Lease
+	errChan   chan error
 	heartbeatOptions
 }
 
@@ -103,16 +108,21 @@ func makeOptions(opts ...HeartbeatOption) *heartbeatOptions {
 	return o
 }
 
-func newHeartbeat(client kubernetes.Interface, nodeName, zone string, errChan chan error, opts ...HeartbeatOption) *heartbeat {
+func newHeartbeat(client kube.Interface, clientSet kubernetes.Interface, nodeName, zone string, errChan chan error, opts ...HeartbeatOption) (*heartbeat, error) {
 	o := makeOptions(opts...)
+
+	if client == nil || clientSet == nil {
+		return nil, fmt.Errorf("client and clienSet must be set")
+	}
 
 	return &heartbeat{
 		nodeName:         nodeName,
 		zone:             zone,
 		client:           client,
+		clientSet:        clientSet,
 		errChan:          errChan,
 		heartbeatOptions: *o,
-	}
+	}, nil
 }
 
 func (h *heartbeat) run(ctx context.Context) error {
@@ -156,7 +166,7 @@ func (h *heartbeat) runDPUNode(ctx context.Context) error {
 			case <-ctx.Done():
 				ticker.Stop()
 				// release the lease
-				err := h.client.CoordinationV1().Leases(h.leaseNS).Delete(ctx, h.nodeName, metav1.DeleteOptions{})
+				err := h.clientSet.CoordinationV1().Leases(h.leaseNS).Delete(ctx, h.nodeName, metav1.DeleteOptions{})
 				h.errChan <- err
 				return
 			case <-ticker.C:
@@ -173,6 +183,11 @@ func (h *heartbeat) runDPUNode(ctx context.Context) error {
 						}
 						return true, nil
 					}); err != nil {
+					// if canceled context, do not send error
+					if errors.Is(err, context.Canceled) {
+						h.errChan <- nil
+						return
+					}
 					h.errChan <- fmt.Errorf("failed to update heartbeat lease: %w", err)
 				}
 			}
@@ -192,6 +207,7 @@ func (h *heartbeat) runDPUHost(ctx context.Context) error {
 				h.errChan <- nil
 				return
 			case <-ticker.C:
+				var errs []error
 				if err := wait.ExponentialBackoffWithContext(ctx,
 					wait.Backoff{
 						Duration: retryInterval,
@@ -199,18 +215,24 @@ func (h *heartbeat) runDPUHost(ctx context.Context) error {
 						Steps:    retryNumber,
 						Jitter:   0.4,
 					}, func(context.Context) (done bool, err error) {
-						if valid, err := isHeartBeatValid(ctx, h.client, h.zone, h.leaseNS); err != nil || !valid {
+						if valid, err := isHeartBeatValid(ctx, h.clientSet, h.zone, h.leaseNS); err != nil || !valid {
 							klog.Errorf("Heartbeat lease is not valid: %v", err)
 							return false, nil
 						}
 						return true, nil
 					}); err != nil {
 					// if canceled context, do not send error
-					if ctx.Err() != nil {
+					if errors.Is(err, context.Canceled) {
 						h.errChan <- nil
 						return
 					}
-					h.errChan <- fmt.Errorf("failed to check heartbeat lease: %w", err)
+					errs = append(errs, fmt.Errorf("failed to check heartbeat lease: %w", err))
+					if err := setNodeNetworkUnavailableTaint(ctx, h.client, h.nodeName); err != nil {
+						klog.Errorf("Failed to set NetworkUnavailable taint: %v", err)
+						errs = append(errs, err)
+					}
+					h.errChan <- kerrors.NewAggregate(errs)
+					return
 				}
 			}
 		}
@@ -220,7 +242,7 @@ func (h *heartbeat) runDPUHost(ctx context.Context) error {
 }
 
 func (h *heartbeat) get(ctx context.Context) (*coordinationv1.Lease, error) {
-	lease, err := h.client.CoordinationV1().Leases(h.leaseNS).Get(ctx, h.nodeName, metav1.GetOptions{})
+	lease, err := h.clientSet.CoordinationV1().Leases(h.leaseNS).Get(ctx, h.nodeName, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +256,7 @@ func (h *heartbeat) update(ctx context.Context, leaseSpec coordinationv1.LeaseSp
 
 	h.lease.Spec = leaseSpec
 
-	lease, err := h.client.CoordinationV1().Leases(h.leaseNS).Update(ctx, h.lease, metav1.UpdateOptions{})
+	lease, err := h.clientSet.CoordinationV1().Leases(h.leaseNS).Update(ctx, h.lease, metav1.UpdateOptions{})
 	if err != nil {
 		return err
 	}
@@ -245,7 +267,7 @@ func (h *heartbeat) update(ctx context.Context, leaseSpec coordinationv1.LeaseSp
 
 func (h *heartbeat) create(ctx context.Context, leaseSpec coordinationv1.LeaseSpec) error {
 	var err error
-	h.lease, err = h.client.CoordinationV1().Leases(h.leaseNS).Create(ctx, &coordinationv1.Lease{
+	h.lease, err = h.clientSet.CoordinationV1().Leases(h.leaseNS).Create(ctx, &coordinationv1.Lease{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      h.nodeName,
 			Namespace: h.leaseNS,
@@ -295,4 +317,51 @@ func isHeartBeatValid(ctx context.Context, client kubernetes.Interface, zone, ns
 
 func newTicker(d time.Duration) *time.Ticker {
 	return time.NewTicker(d)
+}
+
+// setNodeNetworkUnavailableTaint informs the Kubernetes scheduler and other controllers
+// that the node should be avoided for pod placement unless the pod explicitly tolerates the taint.
+// It does not evict already running pods.
+func setNodeNetworkUnavailableTaint(ctx context.Context, client kube.Interface, nodeName string) error {
+	// we use a well known taint node.kubernetes.io/network-unavailable, so that critical daemonsets can still tolerate it.
+	// https://github.com/kubernetes/kubernetes/blob/f007012f5fe49e40ae0596cf463a8e7b247b3357/pkg/controller/daemon/util/daemonset_util.go#L95
+	if err := wait.ExponentialBackoffWithContext(ctx,
+		wait.Backoff{
+			Duration: retryInterval,
+			Factor:   1.5,
+			Steps:    retryNumber,
+			Jitter:   0.4,
+		}, func(context.Context) (done bool, err error) {
+			if err = client.SetTaintOnNode(nodeName, &kapi.Taint{
+				Key:    kapi.TaintNodeNetworkUnavailable,
+				Effect: kapi.TaintEffectNoSchedule,
+			}); err != nil {
+				return false, nil
+			}
+			return true, nil
+		}); err != nil {
+		return fmt.Errorf("failed to set NetworkUnavailable taint: %w", err)
+	}
+	return nil
+}
+
+func removeNodeNetworkUnavailableTaint(ctx context.Context, client kube.Interface, nodeName string) error {
+	if err := wait.ExponentialBackoffWithContext(ctx,
+		wait.Backoff{
+			Duration: retryInterval,
+			Factor:   1.5,
+			Steps:    retryNumber,
+			Jitter:   0.4,
+		}, func(context.Context) (done bool, err error) {
+			if err = client.RemoveTaintFromNode(nodeName, &kapi.Taint{
+				Key:    kapi.TaintNodeNetworkUnavailable,
+				Effect: kapi.TaintEffectNoSchedule,
+			}); err != nil {
+				return false, nil
+			}
+			return true, nil
+		}); err != nil {
+		return fmt.Errorf("failed to remove NetworkUnavailable taint: %w", err)
+	}
+	return nil
 }
