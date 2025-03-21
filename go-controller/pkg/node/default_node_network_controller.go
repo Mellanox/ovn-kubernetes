@@ -1121,6 +1121,15 @@ func (nc *DefaultNodeNetworkController) Start(ctx context.Context) error {
 		return err
 	}
 
+	if config.OvnKubeNode.Mode == types.NodeModeDPUHost {
+		// we might have tainted the node with NetworkUnavailable condition on a previous run
+		// when the node heartbeat check failed, so we explicitly remove it here.
+		if err := removeNodeNetworkUnavailableTaint(ctx, nc.Kube, nc.name); err != nil {
+			klog.Errorf("Failed to remove NetworkUnavailable taint: %v", err)
+			return err
+		}
+	}
+
 	if config.OVNKubernetesFeature.EnableEgressService {
 		wf := nc.watchFactory.(*factory.WatchFactory)
 		c, err := egressservice.NewController(nc.stopChan, ovnKubeNodeSNATMark, nc.name,
@@ -1372,12 +1381,19 @@ func (nc *DefaultNodeNetworkController) validateVTEPInterfaceMTU() error {
 }
 
 func (nc *DefaultNodeNetworkController) startDPUNodeheartbeat(ctx context.Context, zone, ns string, duration int, interval time.Duration) error {
-	h := newHeartbeat(nc.Kube.(*kube.Kube).KClient, nc.name, zone, nc.errChan,
+	c, ok := nc.Kube.(*kube.Kube)
+	if !ok {
+		return fmt.Errorf("invalid client")
+	}
+	h, err := newHeartbeat(nc.Kube, c.KClient, nc.name, zone, nc.errChan,
 		HolderIdentityOption(nc.name),
 		LeaseDurationSecondsOption(duration),
 		LeaseNSOption(ns),
 		ModeOption(types.NodeModeDPU),
 		IntervalOption(interval))
+	if err != nil {
+		return err
+	}
 	if err := h.run(ctx); err != nil {
 		return err
 	}
@@ -1385,8 +1401,12 @@ func (nc *DefaultNodeNetworkController) startDPUNodeheartbeat(ctx context.Contex
 }
 
 func (nc *DefaultNodeNetworkController) checkDPUNodeHeartbeat(ctx context.Context, zone, ns string, interval, timeout time.Duration) error {
+	c, ok := nc.Kube.(*kube.Kube)
+	if !ok {
+		return fmt.Errorf("invalid client")
+	}
 	err := wait.PollUntilContextTimeout(context.Background(), 500*time.Millisecond, timeout, true, func(ctx context.Context) (bool, error) {
-		ready, err := isHeartBeatValid(ctx, nc.Kube.(*kube.Kube).KClient, zone, ns)
+		ready, err := isHeartBeatValid(ctx, c.KClient, zone, ns)
 		if err != nil {
 			klog.Infof("Waiting for the dpu node to be ready: %v", err)
 			return false, nil
@@ -1401,10 +1421,13 @@ func (nc *DefaultNodeNetworkController) checkDPUNodeHeartbeat(ctx context.Contex
 	}
 
 	// Start the heartbeat for the DPU Host node
-	h := newHeartbeat(nc.Kube.(*kube.Kube).KClient, nc.name, zone, nc.errChan,
+	h, err := newHeartbeat(nc.Kube, c.KClient, nc.name, zone, nc.errChan,
 		LeaseNSOption(ns),
 		ModeOption(types.NodeModeDPUHost),
 		IntervalOption(interval))
+	if err != nil {
+		return err
+	}
 	if err = h.run(ctx); err != nil {
 		return err
 	}
