@@ -288,14 +288,14 @@ spec:
         - name: GATEWAY_DISCOVERY_NETWORK
           value: {{ default "" .Values.dpuManifests.gatewayDiscoveryNetwork | quote }}
         {{- else }}
-        - name: VTEP_CIDR
-          value: {{ default "" .Values.dpuManifests.vtepCIDR | quote }}
         - name: OVN_MTU
           valueFrom:
             configMapKeyRef:
               name: {{ include "ovn-kubernetes.fullname" . }}-config
               key: mtu
         {{- end }}
+        - name: VTEP_CIDR
+          value: {{ default "" .Values.dpuManifests.vtepCIDR | quote }}
         - name: HOST_CIDR
           value: {{ default "" .Values.dpuManifests.hostCIDR | quote }}
         volumeMounts:
