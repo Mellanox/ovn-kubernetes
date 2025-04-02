@@ -270,6 +270,8 @@ spec:
             fieldRef:
               apiVersion: v1
               fieldPath: metadata.name
+        - name: OVNKUBE_NODE_LEASE_NAMESPACE
+          value: {{ default .Release.Namespace .Values.leaseNamespace }}
         readinessProbe:
           exec:
             command: ["/usr/bin/ovn-kube-util", "readiness-probe", "-t", "ovnkube-node"]

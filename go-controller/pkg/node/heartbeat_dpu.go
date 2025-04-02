@@ -25,7 +25,7 @@ const (
 	// This the default value for corev1.Node leases
 	defaultLeaseDurationSeconds = 40
 	// defaultLeaseNS is the default namespace for the lease.
-	defaultLeaseNS = "dpu-node-lease"
+	defaultLeaseNS = "ovn-kubernetes"
 	// defaultLeaseZoneLabel is the label set on a lease that identifies the zone
 	defaultLeaseZoneLabel = "k8s.ovn.org/node-lease-zone"
 	// retryInterval is the interval between retries when updating or checking the lease
