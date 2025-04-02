@@ -784,7 +784,7 @@ func heartbeatDPUHostTest(app *cli.App, uplinkName, hostIP string) {
 		node, err = kubeFakeClient.CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(node.Spec.Taints).To(HaveLen(1))
-		Expect(node.Spec.Taints[0].Key).To(Equal(kapi.TaintNodeNetworkUnavailable))
+		Expect(node.Spec.Taints[0].Key).To(Equal(networkUnavailableTaintKey))
 
 		// remove the taint
 		err = removeNodeNetworkUnavailableTaint(context.Background(), &kube.Kube{KClient: kubeFakeClient}, nodeName)
