@@ -96,6 +96,7 @@ fi
 # OVN_NORTHD_BACKOFF_INTERVAL - ovn northd backoff interval in ms (default 300)
 # OVN_ENABLE_SVC_TEMPLATE_SUPPORT - enable svc template support
 # OVN_ENABLE_DNSNAMERESOLVER - enable dns name resolver support
+# OVNKUBE_NODE_LEASE_NAMESPACE - namespace to store node lease information
 
 # The argument to the command is the operation to be performed
 # ovn-master ovn-controller ovn-node display display_env ovn_debug
@@ -305,6 +306,9 @@ ovnkube_metrics_scale_enable=${OVNKUBE_METRICS_SCALE_ENABLE:-false}
 ovn_encap_ip=${OVN_ENCAP_IP:-}
 # OVN_KUBERNETES_CONNTRACK_ZONE - conntrack zone number used for openflow rules (default 64000)
 ovn_conntrack_zone=${OVN_KUBERNETES_CONNTRACK_ZONE:-64000}
+
+# OVNKUBE_NODE_LEASE_NAMESPACE - namespace to store node lease information
+ovnkube_node_lease_namespace=${OVNKUBE_NODE_LEASE_NAMESPACE:-}
 
 ovn_ex_gw_network_interface=${OVN_EX_GW_NETWORK_INTERFACE:-}
 # OVNKUBE_COMPACT_MODE_ENABLE indicate if ovnkube run master and node in one process
@@ -1890,6 +1894,11 @@ ovnkube-controller-with-node() {
     fi
   fi
 
+  ovnkube_node_lease_namespace_flag=
+  if [[ ${ovnkube_node_lease_namespace} != "" ]]; then
+    ovnkube_node_lease_namespace_flag="--ovnkube-node-lease-namespace=${ovnkube_node_lease_namespace}"
+  fi
+
   ovnkube_node_mgmt_port_netdev_flag=
   if [[ ${ovnkube_node_mgmt_port_netdev} != "" ]]; then
     ovnkube_node_mgmt_port_netdev_flag="--ovnkube-node-mgmt-port-netdev=${ovnkube_node_mgmt_port_netdev}"
@@ -2055,6 +2064,7 @@ ovnkube-controller-with-node() {
     ${ovnkube_metrics_tls_opts} \
     ${ovnkube_node_mgmt_port_netdev_flag} \
     ${ovnkube_node_mode_flag} \
+    ${ovnkube_node_lease_namespace_flag} \
     ${ovn_unprivileged_flag} \
     ${ovn_v4_join_subnet_opt} \
     ${ovn_v4_masquerade_subnet_opt} \
@@ -2646,6 +2656,7 @@ ovn-node() {
         ${ovnkube_node_certs_flags} \
         ${ovnkube_node_mgmt_port_netdev_flag} \
         ${ovnkube_node_mode_flag} \
+        ${ovnkube_node_lease_namespace_flag} \
         ${ovn_node_ssl_opts} \
         ${ovn_unprivileged_flag} \
         ${routable_mtu_flag} \

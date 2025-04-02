@@ -95,3 +95,7 @@ serviceDaemonSet:
   #  type: RollingUpdate
   #  rollingUpdate:
   #    maxUnavailable: 1
+
+# lease namespace should be the same as the where the DPU node lease is created
+# default value is unset, which means the namespace is the same as the release namespace
+leaseNamespace: ""
