@@ -11,7 +11,6 @@ import (
 
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/config"
 	adminpolicybasedrouteclient "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/crd/adminpolicybasedroute/v1/apis/clientset/versioned/fake"
-	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/kube"
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/kube/mocks"
 
 	ovntest "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/testing"
@@ -776,19 +775,28 @@ func heartbeatDPUHostTest(app *cli.App, uplinkName, hostIP string) {
 		_, err = kubeFakeClient.CoordinationV1().Leases(defaultLeaseNS).Update(context.Background(), lease, metav1.UpdateOptions{})
 		Expect(err).NotTo(HaveOccurred())
 
-		//verify that error was reported
-		err = <-errChan
-		Expect(err).To(HaveOccurred())
+		Eventually(func(g Gomega) {
+			// check that the node is tainted
+			node, err = kubeFakeClient.CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(node.Spec.Taints).To(HaveLen(1))
+			g.Expect(node.Spec.Taints[0].Key).To(Equal(kapi.TaintNodeNetworkUnavailable))
+		}).ShouldNot(HaveOccurred())
 
-		// check that the node is tainted
-		node, err = kubeFakeClient.CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
+		// update the lease to make it valid again
+		lease, err = kubeFakeClient.CoordinationV1().Leases(defaultLeaseNS).Get(context.Background(), nodeName, metav1.GetOptions{})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(node.Spec.Taints).To(HaveLen(1))
-		Expect(node.Spec.Taints[0].Key).To(Equal(kapi.TaintNodeNetworkUnavailable))
+		lease.Spec.RenewTime = &metav1.MicroTime{Time: time.Now()}
+		lease.Spec.LeaseDurationSeconds = ptr.To(int32(40))
+		_, err = kubeFakeClient.CoordinationV1().Leases(defaultLeaseNS).Update(context.Background(), lease, metav1.UpdateOptions{})
+		Expect(err).NotTo(HaveOccurred())
 
-		// remove the taint
-		err = removeNodeNetworkUnavailableTaint(context.Background(), &kube.Kube{KClient: kubeFakeClient}, nodeName)
-		Expect(err).NotTo(HaveOccurred())
+		// check that the node is not tainted
+		Eventually(func(g Gomega) {
+			node, err = kubeFakeClient.CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(node.Spec.Taints).To(HaveLen(0))
+		}).ShouldNot(HaveOccurred())
 
 		return nil
 	}

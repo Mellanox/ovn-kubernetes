@@ -77,12 +77,13 @@ func (o IntervalOption) Apply(options *heartbeatOptions) {
 }
 
 type heartbeat struct {
-	nodeName  string
-	zone      string
-	client    kube.Interface
-	clientSet kubernetes.Interface
-	lease     *coordinationv1.Lease
-	errChan   chan error
+	nodeName    string
+	zone        string
+	client      kube.Interface
+	clientSet   kubernetes.Interface
+	lease       *coordinationv1.Lease
+	errChan     chan error
+	taintMarker bool
 	heartbeatOptions
 }
 
@@ -207,7 +208,6 @@ func (h *heartbeat) runDPUHost(ctx context.Context) error {
 				h.errChan <- nil
 				return
 			case <-ticker.C:
-				var errs []error
 				if err := wait.ExponentialBackoffWithContext(ctx,
 					wait.Backoff{
 						Duration: retryInterval,
@@ -226,13 +226,33 @@ func (h *heartbeat) runDPUHost(ctx context.Context) error {
 						h.errChan <- nil
 						return
 					}
-					errs = append(errs, fmt.Errorf("failed to check heartbeat lease: %w", err))
-					if err := setNodeNetworkUnavailableTaint(ctx, h.client, h.nodeName); err != nil {
-						klog.Errorf("Failed to set NetworkUnavailable taint: %v", err)
-						errs = append(errs, err)
+					if !h.taintMarker {
+						var errs []error
+						errs = append(errs, fmt.Errorf("failed to check heartbeat lease: %w", err))
+						if err := setNodeNetworkUnavailableTaint(ctx, h.client, h.nodeName); err != nil {
+							klog.Errorf("Failed to set NetworkUnavailable taint: %v", err)
+							errs = append(errs, err)
+							h.errChan <- kerrors.NewAggregate(errs)
+							// if we cannot set the taint, we need to return
+							// and exit the process, because pod can be scheduled
+							// on this node and we have an unhealthy node
+							return
+						}
+						// if we set the taint, we need to set the marker
+						// and move on until next heartbeat
+						h.taintMarker = true
 					}
-					h.errChan <- kerrors.NewAggregate(errs)
-					return
+					continue
+				}
+				// if we are here, it means the heartbeat lease is valid
+				// and we can remove the taint
+				if h.taintMarker {
+					if err := removeNodeNetworkUnavailableTaint(ctx, h.client, h.nodeName); err != nil {
+						klog.Errorf("Failed to remove NetworkUnavailable taint: %v", err)
+						h.errChan <- err
+						return
+					}
+					h.taintMarker = false
 				}
 			}
 		}
