@@ -25,13 +25,15 @@ const (
 	// This the default value for corev1.Node leases
 	defaultLeaseDurationSeconds = 40
 	// defaultLeaseNS is the default namespace for the lease.
-	defaultLeaseNS = "dpu-node-lease"
+	defaultLeaseNS = "ovn-kubernetes"
 	// defaultLeaseZoneLabel is the label set on a lease that identifies the zone
 	defaultLeaseZoneLabel = "k8s.ovn.org/node-lease-zone"
 	// retryInterval is the interval between retries when updating or checking the lease
 	retryInterval = 100 * time.Millisecond
 	// retryNumber is the number of retries when updating or checking the lease
 	retryNumber = 3
+	// networkUnavailableTaintKey taint key is set on host nodes when heartbeat failed
+	networkUnavailableTaintKey = "k8s.ovn.org/network-unavailable"
 )
 
 type heartbeatOptions struct {
@@ -323,8 +325,6 @@ func newTicker(d time.Duration) *time.Ticker {
 // that the node should be avoided for pod placement unless the pod explicitly tolerates the taint.
 // It does not evict already running pods.
 func setNodeNetworkUnavailableTaint(ctx context.Context, client kube.Interface, nodeName string) error {
-	// we use a well known taint node.kubernetes.io/network-unavailable, so that critical daemonsets can still tolerate it.
-	// https://github.com/kubernetes/kubernetes/blob/f007012f5fe49e40ae0596cf463a8e7b247b3357/pkg/controller/daemon/util/daemonset_util.go#L95
 	if err := wait.ExponentialBackoffWithContext(ctx,
 		wait.Backoff{
 			Duration: retryInterval,
@@ -333,7 +333,7 @@ func setNodeNetworkUnavailableTaint(ctx context.Context, client kube.Interface, 
 			Jitter:   0.4,
 		}, func(context.Context) (done bool, err error) {
 			if err = client.SetTaintOnNode(nodeName, &kapi.Taint{
-				Key:    kapi.TaintNodeNetworkUnavailable,
+				Key:    networkUnavailableTaintKey,
 				Effect: kapi.TaintEffectNoSchedule,
 			}); err != nil {
 				return false, nil
@@ -354,7 +354,7 @@ func removeNodeNetworkUnavailableTaint(ctx context.Context, client kube.Interfac
 			Jitter:   0.4,
 		}, func(context.Context) (done bool, err error) {
 			if err = client.RemoveTaintFromNode(nodeName, &kapi.Taint{
-				Key:    kapi.TaintNodeNetworkUnavailable,
+				Key:    networkUnavailableTaintKey,
 				Effect: kapi.TaintEffectNoSchedule,
 			}); err != nil {
 				return false, nil

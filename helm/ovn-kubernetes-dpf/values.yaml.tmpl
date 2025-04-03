@@ -75,6 +75,11 @@ global:
 commonManifests:
   enabled: false
 
+# -- The name of the namespace where the leases are going to be stored. This value
+# should be the same for the host and DPU components. Defaults to Release.Namespace
+# if it's not set.
+leaseNamespace: ""
+
 # DPF Contract. These values are effective only for manifests related to hosts that
 # have a DPU and the DPU manifests themselves.
 serviceDaemonSet:
