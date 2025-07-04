@@ -22,6 +22,8 @@ nodeWithDPUManifests:
   nodeMgmtPortNetdev: ""
   dpuServiceAccountName: ovn-dpu
   dpuServiceAccountNamespace: ovn-kubernetes
+  cniBinDir: "/opt/cni/bin"
+  cniConfDir: "/etc/cni/net.d"
 
 # -- Variables related to manifests that are deployed for nodes without DPU
 nodeWithoutDPUManifests:
@@ -30,6 +32,8 @@ nodeWithoutDPUManifests:
     repository: ${OVNKUBERNETES_IMAGE}
     tag: ${TAG}
     pullPolicy: IfNotPresent
+  cniBinDir: "/opt/cni/bin"
+  cniConfDir: "/etc/cni/net.d"
 
 # -- Variables related to manifests that are deployed on the DPU
 dpuManifests:
@@ -47,6 +51,8 @@ dpuManifests:
   ipamPFIPIndex: 1
   externalDHCP: false
   gatewayDiscoveryNetwork: "169.254.99.100/32" # This is a "dummy" subnet used to get the default gateway address from DHCP server (via option 121)
+  cniBinDir: "/opt/cni/bin"
+  cniConfDir: "/etc/cni/net.d"
 
 # -- Variables related to manifests that are needed to setup the OVN Control Plane
 controlPlaneManifests:
@@ -55,6 +61,8 @@ controlPlaneManifests:
     repository: ${OVNKUBERNETES_IMAGE}
     tag: ${TAG}
     pullPolicy: IfNotPresent
+  cniBinDir: "/opt/cni/bin"
+  cniConfDir: "/etc/cni/net.d"
 
 # -- Endpoint of Kubernetes API server
 k8sAPIServer: https://172.25.0.2:6443
