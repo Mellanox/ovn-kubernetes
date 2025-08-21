@@ -1,3 +1,4 @@
+{{ if .Values.enablePrometheusOperator }}
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -387,4 +388,5 @@ spec:
       annotations:
        message: |
          {{`ovnkube clustermanager allocated IPv6 host subnets value for {{ $labels.network_name }} network should be same as the number of K8s nodes`}}
+{{ end }}
 
