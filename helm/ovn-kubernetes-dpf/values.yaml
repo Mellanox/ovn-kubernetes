@@ -51,6 +51,7 @@ dpuManifests:
   ipamPFIPIndex: 1
   externalDHCP: false
   gatewayDiscoveryNetwork: "169.254.99.100/32" # This is a "dummy" subnet used to get the default gateway address from DHCP server (via option 121)
+  ovnMultiNetworkEnable: false  # Set to true to enable OVN multi-network support
   cniBinDir: "/opt/cni/bin"
   cniConfDir: "/etc/cni/net.d"
 
@@ -61,6 +62,7 @@ controlPlaneManifests:
     repository: ${OVNKUBERNETES_IMAGE}
     tag: ${TAG}
     pullPolicy: IfNotPresent
+  ovnMultiNetworkEnable: false  # Set to true to enable OVN multi-network support
 
 # -- Endpoint of Kubernetes API server
 k8sAPIServer: https://172.25.0.2:6443
