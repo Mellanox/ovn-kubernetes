@@ -604,6 +604,7 @@ type OvnKubeNodeConfig struct {
 	Mode                   string `gcfg:"mode"`
 	MgmtPortNetdev         string `gcfg:"mgmt-port-netdev"`
 	MgmtPortDPResourceName string `gcfg:"mgmt-port-dp-resource-name"`
+	LeaseNS                string `gcfg:"lease-namespace"`
 }
 
 // ClusterManagerConfig holds configuration for ovnkube-cluster-manager
@@ -1713,6 +1714,12 @@ var OvnKubeNodeFlags = []cli.Flag{
 		Usage:       "ovnkube-node operating mode full (default), dpu, dpu-host",
 		Value:       OvnKubeNode.Mode,
 		Destination: &cliConfig.OvnKubeNode.Mode,
+	},
+	&cli.StringFlag{
+		Name:        "ovnkube-node-lease-namespace",
+		Usage:       "ovnkube-node namespace for heartbeat lease",
+		Value:       OvnKubeNode.LeaseNS,
+		Destination: &cliConfig.OvnKubeNode.LeaseNS,
 	},
 	&cli.StringFlag{
 		Name: "ovnkube-node-mgmt-port-netdev",

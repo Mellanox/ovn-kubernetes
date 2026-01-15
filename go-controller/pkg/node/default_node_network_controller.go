@@ -82,6 +82,7 @@ type BaseNodeNetworkController struct {
 
 	// stopChan and WaitGroup per controller
 	stopChan chan struct{}
+	errChan  chan error
 	wg       *sync.WaitGroup
 }
 
@@ -137,7 +138,7 @@ type DefaultNodeNetworkController struct {
 	ovsClient client.Client
 }
 
-func newDefaultNodeNetworkController(cnnci *CommonNodeNetworkControllerInfo, stopChan chan struct{},
+func newDefaultNodeNetworkController(cnnci *CommonNodeNetworkControllerInfo, stopChan chan struct{}, errChan chan error,
 	wg *sync.WaitGroup, routeManager *routemanager.Controller, networkManager networkmanager.Interface, ovsClient client.Client) *DefaultNodeNetworkController {
 
 	c := &DefaultNodeNetworkController{
@@ -146,6 +147,7 @@ func newDefaultNodeNetworkController(cnnci *CommonNodeNetworkControllerInfo, sto
 			ReconcilableNetInfo:             &util.DefaultNetInfo{},
 			networkManager:                  networkManager,
 			stopChan:                        stopChan,
+			errChan:                         errChan,
 			wg:                              wg,
 		},
 		routeManager: routeManager,
@@ -160,11 +162,11 @@ func newDefaultNodeNetworkController(cnnci *CommonNodeNetworkControllerInfo, sto
 }
 
 // NewDefaultNodeNetworkController creates a new network controller for node management of the default network
-func NewDefaultNodeNetworkController(cnnci *CommonNodeNetworkControllerInfo, networkManager networkmanager.Interface, ovsClient client.Client) (*DefaultNodeNetworkController, error) {
+func NewDefaultNodeNetworkController(cnnci *CommonNodeNetworkControllerInfo, networkManager networkmanager.Interface, ovsClient client.Client, errChan chan error) (*DefaultNodeNetworkController, error) {
 	var err error
 	stopChan := make(chan struct{})
 	wg := &sync.WaitGroup{}
-	nc := newDefaultNodeNetworkController(cnnci, stopChan, wg, cnnci.routeManager, networkManager, ovsClient)
+	nc := newDefaultNodeNetworkController(cnnci, stopChan, errChan, wg, cnnci.routeManager, networkManager, ovsClient)
 
 	if len(config.Kubernetes.HealthzBindAddress) != 0 {
 		klog.Infof("Enable node proxy healthz server on %s", config.Kubernetes.HealthzBindAddress)
@@ -1226,6 +1228,14 @@ func (nc *DefaultNodeNetworkController) Start(ctx context.Context) error {
 		}
 	}
 
+	if config.OvnKubeNode.Mode == types.NodeModeDPUHost {
+		// we might have tainted the node with NetworkUnavailable condition on a previous run
+		// when the node heartbeat check failed, so we explicitly remove it here.
+		if err := removeNodeNetworkUnavailableTaint(ctx, nc.Kube, nc.name); err != nil {
+			klog.Errorf("Failed to remove NetworkUnavailable taint: %v", err)
+			return err
+		}
+	}
 	// configure NFT/IPT rules for egressService
 	if config.OVNKubernetesFeature.EnableEgressService && config.OvnKubeNode.Mode != types.NodeModeDPU {
 		wf := nc.watchFactory.(*factory.WatchFactory)
@@ -1625,6 +1635,64 @@ func (nc *DefaultNodeNetworkController) validateVTEPInterfaceMTU() error {
 
 func getPMTUDKey(nodeName string) string {
 	return fmt.Sprintf("%s_pmtud", nodeName)
+}
+
+func (nc *DefaultNodeNetworkController) startDPUNodeheartbeat(ctx context.Context, zone, ns string, duration int, interval time.Duration) error {
+	c, ok := nc.Kube.(*kube.Kube)
+	if !ok {
+		return fmt.Errorf("invalid client")
+	}
+	h, err := newHeartbeat(nc.Kube, c.KClient, nc.name, zone, nc.errChan,
+		HolderIdentityOption(nc.name),
+		LeaseDurationSecondsOption(duration),
+		LeaseNSOption(ns),
+		ModeOption(types.NodeModeDPU),
+		IntervalOption(interval))
+	if err != nil {
+		return err
+	}
+	if err := h.run(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (nc *DefaultNodeNetworkController) checkDPUNodeHeartbeat(ctx context.Context, zone, ns string, interval, timeout time.Duration) error {
+	c, ok := nc.Kube.(*kube.Kube)
+	if !ok {
+		return fmt.Errorf("invalid client")
+	}
+	err := wait.PollUntilContextTimeout(context.Background(), 500*time.Millisecond, timeout, true, func(ctx context.Context) (bool, error) {
+		ready, err := isHeartBeatValid(ctx, c.KClient, zone, ns)
+		if err != nil {
+			klog.Infof("Waiting for the dpu node to be ready: %v", err)
+			return false, nil
+		}
+		if ready {
+			return true, nil
+		}
+		return false, nil
+	})
+	if err != nil {
+		return fmt.Errorf("timed out waiting for the dpu node to be ready: %v", err)
+	}
+
+	// Start the heartbeat for the DPU Host node
+	h, err := newHeartbeat(nc.Kube, c.KClient, nc.name, zone, nc.errChan,
+		LeaseNSOption(ns),
+		ModeOption(types.NodeModeDPUHost),
+		IntervalOption(interval))
+	if err != nil {
+		return err
+	}
+	if err = h.run(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
+func configureSvcRouteViaBridge(routeManager *routemanager.Controller, bridge string) error {
+	return configureSvcRouteViaInterface(routeManager, bridge, DummyNextHopIPs())
 }
 
 // DummyNextHopIPs returns the fake next hops used for service traffic routing.

@@ -44,6 +44,7 @@ type NodeControllerManager struct {
 	Kube          kube.Interface
 	watchFactory  factory.NodeWatchFactory
 	stopChan      chan struct{}
+	errChan       chan error
 	wg            *sync.WaitGroup
 	recorder      record.EventRecorder
 
@@ -250,13 +251,14 @@ func isNetworkManagerRequiredForNode() bool {
 
 // NewNodeControllerManager creates a new OVN controller manager to manage all the controller for all networks
 func NewNodeControllerManager(ovnClient *util.OVNClientset, wf factory.NodeWatchFactory, name string,
-	wg *sync.WaitGroup, eventRecorder record.EventRecorder, routeManager *routemanager.Controller, ovsClient client.Client) (*NodeControllerManager, error) {
+	wg *sync.WaitGroup, eventRecorder record.EventRecorder, routeManager *routemanager.Controller, ovsClient client.Client, errChan chan error) (*NodeControllerManager, error) {
 	ncm := &NodeControllerManager{
 		name:          name,
 		ovnNodeClient: &util.OVNNodeClientset{KubeClient: ovnClient.KubeClient, AdminPolicyRouteClient: ovnClient.AdminPolicyRouteClient},
 		Kube:          &kube.Kube{KClient: ovnClient.KubeClient},
 		watchFactory:  wf,
 		stopChan:      make(chan struct{}),
+		errChan:       errChan,
 		wg:            wg,
 		recorder:      eventRecorder,
 		routeManager:  routeManager,
@@ -321,7 +323,7 @@ func (ncm *NodeControllerManager) initDefaultNodeNetworkController(ctx context.C
 			config.OvnKubeNode.MgmtPortNetdev, ncm.deviceAllocator.ResourceName())
 	}
 
-	defaultNodeNetworkController, err := node.NewDefaultNodeNetworkController(ncm.newCommonNetworkControllerInfo(ncm.watchFactory), ncm.networkManager.Interface(), ncm.ovsClient)
+	defaultNodeNetworkController, err := node.NewDefaultNodeNetworkController(ncm.newCommonNetworkControllerInfo(ncm.watchFactory), ncm.networkManager.Interface(), ncm.ovsClient, ncm.errChan)
 	if err != nil {
 		return err
 	}
