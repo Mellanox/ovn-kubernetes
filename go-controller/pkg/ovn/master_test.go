@@ -1200,7 +1200,7 @@ var _ = ginkgo.Describe("Default network controller operations", func() {
 				err = oc.syncNodeGateway(testNode)
 				gomega.Expect(err).NotTo(gomega.HaveOccurred())
 
-				skipSnat := (config.Gateway.DisableSNATGatewayRouters && oc.GetNetInfo().IsPrimaryNetwork()) ||
+				skipSnat := (config.Gateway.DisableSNATGatewayRouters && oc.GetNetInfo().IsDefault()) ||
 					(config.Gateway.DisableSNATMultipleGWs && !oc.GetNetInfo().IsPrimaryNetwork())
 				var clusterSubnets []*net.IPNet
 				for _, clusterSubnet := range config.Default.ClusterSubnets {

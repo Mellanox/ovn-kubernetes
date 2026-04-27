@@ -879,7 +879,7 @@ func (gw *GatewayManager) updateGWRouterNAT(nodeName string, gwConfig *GatewayCo
 
 	nats := make([]*nbdb.NAT, 0, len(gwConfig.clusterSubnets))
 	var nat *nbdb.NAT
-	disableGatewayRouterSNAT := gw.netInfo.IsPrimaryNetwork() && config.Gateway.DisableSNATGatewayRouters
+	disableGatewayRouterSNAT := gw.netInfo.IsDefault() && config.Gateway.DisableSNATGatewayRouters
 	// DisableSNATMultipleGWs is only applicable to cluster default network and not to user defined networks.
 	// For user defined networks, we always add SNAT rules regardless of whether the network is advertised or not.
 	if !disableGatewayRouterSNAT && (!config.Gateway.DisableSNATMultipleGWs || gw.netInfo.IsPrimaryNetwork()) {
