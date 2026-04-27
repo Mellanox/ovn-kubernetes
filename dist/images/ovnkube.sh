@@ -230,6 +230,7 @@ ovn_sb_raft_election_timer=${OVN_SB_RAFT_ELECTION_TIMER:-1000}
 ovn_hybrid_overlay_enable=${OVN_HYBRID_OVERLAY_ENABLE:-}
 ovn_hybrid_overlay_net_cidr=${OVN_HYBRID_OVERLAY_NET_CIDR:-}
 ovn_disable_snat_multiple_gws=${OVN_DISABLE_SNAT_MULTIPLE_GWS:-}
+ovn_disable_snat_gateway_routers=${OVN_DISABLE_SNAT_GATEWAY_ROUTERS:-}
 ovn_disable_forwarding=${OVN_DISABLE_FORWARDING:-}
 ovn_disable_pkt_mtu_check=${OVN_DISABLE_PKT_MTU_CHECK:-}
 ovn_empty_lb_events=${OVN_EMPTY_LB_EVENTS:-}
@@ -1280,6 +1281,10 @@ ovn-master() {
   if [[ ${ovn_disable_snat_multiple_gws} == "true" ]]; then
       disable_snat_multiple_gws_flag="--disable-snat-multiple-gws"
   fi
+  disable_snat_gateway_routers_flag=
+  if [[ ${ovn_disable_snat_gateway_routers} == "true" ]]; then
+      disable_snat_gateway_routers_flag="--disable-snat-gateway-routers"
+  fi
 
   disable_forwarding_flag=
   if [[ ${ovn_disable_forwarding} == "true" ]]; then
@@ -1514,6 +1519,7 @@ ovn-master() {
     ${anp_enabled_flag} \
     ${disable_forwarding_flag} \
     ${disable_snat_multiple_gws_flag} \
+    ${disable_snat_gateway_routers_flag} \
     ${egressfirewall_enabled_flag} \
     ${egressip_enabled_flag} \
     ${egressip_healthcheck_port_flag} \
@@ -1606,6 +1612,11 @@ ovnkube-controller() {
       disable_snat_multiple_gws_flag="--disable-snat-multiple-gws"
   fi
   echo "disable_snat_multiple_gws_flag=${disable_snat_multiple_gws_flag}"
+  disable_snat_gateway_routers_flag=
+  if [[ ${ovn_disable_snat_gateway_routers} == "true" ]]; then
+      disable_snat_gateway_routers_flag="--disable-snat-gateway-routers"
+  fi
+  echo "disable_snat_gateway_routers_flag=${disable_snat_gateway_routers_flag}"
 
   ovn_encap_port_flag=
   if [[ -n "${ovn_encap_port}" ]]; then
@@ -1877,6 +1888,7 @@ ovnkube-controller() {
   /usr/bin/ovnkube --init-ovnkube-controller ${K8S_NODE} \
     ${anp_enabled_flag} \
     ${disable_snat_multiple_gws_flag} \
+    ${disable_snat_gateway_routers_flag} \
     ${egressfirewall_enabled_flag} \
     ${egressip_enabled_flag} \
     ${egressip_healthcheck_port_flag} \
@@ -2000,6 +2012,11 @@ ovnkube-controller-with-node() {
       disable_snat_multiple_gws_flag="--disable-snat-multiple-gws"
   fi
   echo "disable_snat_multiple_gws_flag=${disable_snat_multiple_gws_flag}"
+  disable_snat_gateway_routers_flag=
+  if [[ ${ovn_disable_snat_gateway_routers} == "true" ]]; then
+      disable_snat_gateway_routers_flag="--disable-snat-gateway-routers"
+  fi
+  echo "disable_snat_gateway_routers_flag=${disable_snat_gateway_routers_flag}"
 
   disable_forwarding_flag=
   if [[ ${ovn_disable_forwarding} == "true" ]]; then
@@ -2402,6 +2419,7 @@ ovnkube-controller-with-node() {
     ${disable_forwarding_flag} \
     ${disable_pkt_mtu_check_flag} \
     ${disable_snat_multiple_gws_flag} \
+    ${disable_snat_gateway_routers_flag} \
     ${egressfirewall_enabled_flag} \
     ${egress_interface} \
     ${egressip_enabled_flag} \
@@ -2833,6 +2851,10 @@ ovn-node() {
   if [[ ${ovn_disable_snat_multiple_gws} == "true" ]]; then
       disable_snat_multiple_gws_flag="--disable-snat-multiple-gws"
   fi
+  disable_snat_gateway_routers_flag=
+  if [[ ${ovn_disable_snat_gateway_routers} == "true" ]]; then
+      disable_snat_gateway_routers_flag="--disable-snat-gateway-routers"
+  fi
 
   ovn_encap_port_flag=
   if [[ -n "${ovn_encap_port}" ]]; then
@@ -3119,6 +3141,7 @@ ovn-node() {
         ${disable_forwarding_flag} \
         ${disable_pkt_mtu_check_flag} \
         ${disable_snat_multiple_gws_flag} \
+        ${disable_snat_gateway_routers_flag} \
         ${egress_interface} \
         ${egressip_enabled_flag} \
         ${egressip_healthcheck_port_flag} \

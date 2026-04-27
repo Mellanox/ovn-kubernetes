@@ -1395,6 +1395,54 @@ var _ = ginkgo.Describe("Gateway Init Operations", func() {
 			gomega.Eventually(fakeOvn.nbClient).Should(libovsdbtest.HaveData(expectedDatabaseState))
 		})
 
+		ginkgo.It("creates an IPv4 gateway without default cluster SNAT when DisableSNATGatewayRouters is true", func() {
+			clusterIPSubnets := ovntest.MustParseIPNets("10.128.0.0/14")
+			hostSubnets := ovntest.MustParseIPNets("10.130.0.0/23")
+			joinLRPIPs := ovntest.MustParseIPNets("100.64.0.3/16")
+			defLRPIPs := ovntest.MustParseIPNets("100.64.0.1/16")
+			nodeName := "test-node"
+			l3GatewayConfig := &util.L3GatewayConfig{
+				Mode:           config.GatewayModeLocal,
+				ChassisID:      "SYSTEM-ID",
+				BridgeID:       "BRIDGE-ID",
+				InterfaceID:    "INTERFACE-ID",
+				MACAddress:     ovntest.MustParseMAC("11:22:33:44:55:66"),
+				IPAddresses:    ovntest.MustParseIPNets("169.255.33.2/24"),
+				NextHops:       ovntest.MustParseIPs("169.255.33.1"),
+				NodePortEnable: true,
+			}
+			gwConfig := &GatewayConfig{
+				annoConfig:                 l3GatewayConfig,
+				hostSubnets:                hostSubnets,
+				clusterSubnets:             clusterIPSubnets,
+				gwRouterJoinCIDRs:          joinLRPIPs,
+				hostAddrs:                  nil,
+				externalIPs:                extractExternalIPs(l3GatewayConfig),
+				ovnClusterLRPToJoinIfAddrs: defLRPIPs,
+			}
+			config.Gateway.DisableSNATGatewayRouters = true
+
+			var err error
+			fakeOvn.controller.defaultCOPPUUID, err = EnsureDefaultCOPP(fakeOvn.nbClient)
+			gomega.Expect(err).NotTo(gomega.HaveOccurred())
+
+			err = newGatewayManager(fakeOvn, nodeName).gatewayInit(
+				nodeName,
+				gwConfig,
+				true,
+			)
+			gomega.Expect(err).NotTo(gomega.HaveOccurred())
+
+			testData := []libovsdbtest.TestData{}
+			skipSnat := true
+			// We don't set up the Allow from mgmt port ACL here
+			mgmtPortIP := ""
+			expectedDatabaseState := generateGatewayInitExpectedNB(testData, expectedOVNClusterRouter, expectedNodeSwitch,
+				nodeName, clusterIPSubnets, hostSubnets, l3GatewayConfig, joinLRPIPs, defLRPIPs, skipSnat, mgmtPortIP,
+				"1400")
+			gomega.Eventually(fakeOvn.nbClient).Should(libovsdbtest.HaveData(expectedDatabaseState))
+		})
+
 		ginkgo.It("ensures only a single static route per node for ovn_cluster_router", func() {
 			joinLRPIPs := ovntest.MustParseIPNets("100.64.0.3/16")
 			hostSubnets := ovntest.MustParseIPNets("10.130.0.0/23")

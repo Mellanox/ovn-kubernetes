@@ -879,9 +879,10 @@ func (gw *GatewayManager) updateGWRouterNAT(nodeName string, gwConfig *GatewayCo
 
 	nats := make([]*nbdb.NAT, 0, len(gwConfig.clusterSubnets))
 	var nat *nbdb.NAT
+	disableGatewayRouterSNAT := gw.netInfo.IsPrimaryNetwork() && config.Gateway.DisableSNATGatewayRouters
 	// DisableSNATMultipleGWs is only applicable to cluster default network and not to user defined networks.
 	// For user defined networks, we always add SNAT rules regardless of whether the network is advertised or not.
-	if !config.Gateway.DisableSNATMultipleGWs || gw.netInfo.IsPrimaryNetwork() {
+	if !disableGatewayRouterSNAT && (!config.Gateway.DisableSNATMultipleGWs || gw.netInfo.IsPrimaryNetwork()) {
 		var v4UUID, v6UUID string
 		var err error
 		if util.IsNoOverlaySNATExemptionNeeded(gw.netInfo) {
@@ -928,6 +929,9 @@ func (gw *GatewayManager) updateGWRouterNAT(nodeName string, gwConfig *GatewayCo
 			return fmt.Errorf("failed to update SNAT rule for pod on router %s error: %v", gw.gwRouterName, err)
 		}
 	} else {
+		if disableGatewayRouterSNAT {
+			klog.Infof("Skipping default GW router SNAT for %s due to DisableSNATGatewayRouters", gw.gwRouterName)
+		}
 		// ensure we do not have any leftover SNAT entries after an upgrade
 		for _, logicalSubnet := range gwConfig.clusterSubnets {
 			nat = libovsdbops.BuildSNAT(nil, logicalSubnet, "", extIDs)

@@ -1200,7 +1200,8 @@ var _ = ginkgo.Describe("Default network controller operations", func() {
 				err = oc.syncNodeGateway(testNode)
 				gomega.Expect(err).NotTo(gomega.HaveOccurred())
 
-				skipSnat := config.Gateway.DisableSNATMultipleGWs && !oc.GetNetInfo().IsPrimaryNetwork()
+				skipSnat := (config.Gateway.DisableSNATGatewayRouters && oc.GetNetInfo().IsPrimaryNetwork()) ||
+					(config.Gateway.DisableSNATMultipleGWs && !oc.GetNetInfo().IsPrimaryNetwork())
 				var clusterSubnets []*net.IPNet
 				for _, clusterSubnet := range config.Default.ClusterSubnets {
 					clusterSubnets = append(clusterSubnets, clusterSubnet.CIDR)
@@ -1258,6 +1259,14 @@ var _ = ginkgo.Describe("Default network controller operations", func() {
 			"When DisableSNATMultipleGWs is false",
 			func(*DefaultNetworkController) error {
 				config.Gateway.DisableSNATMultipleGWs = false
+				return nil
+			},
+			newNodeSNAT("stale-nodeNAT-UUID-4", "10.0.0.3", "172.16.16.3"), // won't be deleted on this node but will be deleted on the node whose IP is 172.16.16.3 since this pod belongs to this node
+		),
+		ginkgo.Entry(
+			"When DisableSNATGatewayRouters is true",
+			func(*DefaultNetworkController) error {
+				config.Gateway.DisableSNATGatewayRouters = true
 				return nil
 			},
 			newNodeSNAT("stale-nodeNAT-UUID-4", "10.0.0.3", "172.16.16.3"), // won't be deleted on this node but will be deleted on the node whose IP is 172.16.16.3 since this pod belongs to this node

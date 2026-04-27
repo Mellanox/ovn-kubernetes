@@ -555,6 +555,9 @@ type GatewayConfig struct {
 	// DisableSNATMultipleGws sets whether to disable SNAT of egress traffic in namespaces annotated with routing-external-gws
 	// only applicable to the default network not for UDNs
 	DisableSNATMultipleGWs bool `gcfg:"disable-snat-multiple-gws"`
+	// DisableSNATGatewayRouters disables default cluster-subnet SNAT on gateway routers.
+	// This applies only to the default network and requires external return routing for pod CIDRs.
+	DisableSNATGatewayRouters bool `gcfg:"disable-snat-gateway-routers"`
 	// V4JoinSubnet to be used in the cluster
 	V4JoinSubnet string `gcfg:"v4-join-subnet"`
 	// V6JoinSubnet to be used in the cluster
@@ -1675,6 +1678,11 @@ var OVNGatewayFlags = []cli.Flag{
 		Name:        "disable-snat-multiple-gws",
 		Usage:       "Disable SNAT for egress traffic with multiple gateways.",
 		Destination: &cliConfig.Gateway.DisableSNATMultipleGWs,
+	},
+	&cli.BoolFlag{
+		Name:        "disable-snat-gateway-routers",
+		Usage:       "Disable default gateway-router SNAT for cluster pod subnets.",
+		Destination: &cliConfig.Gateway.DisableSNATGatewayRouters,
 	},
 	&cli.BoolFlag{
 		Name:        "disable-forwarding",
