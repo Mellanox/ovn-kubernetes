@@ -2682,6 +2682,12 @@ ovn-cluster-manager() {
   fi
   echo "empty_lb_events_flag=${empty_lb_events_flag}"
 
+  disable_snat_gateway_routers_flag=
+  if [[ ${ovn_disable_snat_gateway_routers} == "true" ]]; then
+      disable_snat_gateway_routers_flag="--disable-snat-gateway-routers"
+  fi
+  echo "disable_snat_gateway_routers_flag=${disable_snat_gateway_routers_flag}"
+
   network_qos_enabled_flag=
   if [[ ${ovn_network_qos_enable} == "true" ]]; then
       network_qos_enabled_flag="--enable-network-qos"
@@ -2721,6 +2727,7 @@ ovn-cluster-manager() {
     ${egressqos_enabled_flag} \
     ${egressservice_enabled_flag} \
     ${empty_lb_events_flag} \
+    ${disable_snat_gateway_routers_flag} \
     ${hybrid_overlay_flags} \
     ${multicast_enabled_flag} \
     ${multi_network_enabled_flag} \
