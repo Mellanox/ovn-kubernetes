@@ -772,7 +772,7 @@ func (nc *DefaultNodeNetworkController) Init(ctx context.Context) error {
 		config.OvnKubeNode.DPUNodeLeaseRenewInterval > 0 {
 		nc.dpuNodeLeaseManager = dpulease.NewManager(
 			nc.client,
-			config.Kubernetes.OVNConfigNamespace,
+			config.DPUNodeLeaseNS(),
 			node,
 			time.Duration(config.OvnKubeNode.DPUNodeLeaseRenewInterval)*time.Second,
 			time.Duration(config.OvnKubeNode.DPUNodeLeaseDuration)*time.Second,
