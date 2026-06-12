@@ -443,14 +443,11 @@ func gatewayInitInternal(nodeName, gwIntf, egressGatewayIntf string, gwNextHops 
 	}
 
 	if config.OvnKubeNode.Mode != types.NodeModeDPUHost {
-		// Set static FDB entry for sharedGW MAC.
-		// If `GatewayIfaceRep` port is present, use it instead of LOCAL (bridge name).
-		gwport := gatewayBridge.GetBridgeName()                           // Default is LOCAL port for the bridge.
-		if repPort := gatewayBridge.GetGatewayIfaceRep(); repPort != "" { // We have an accelerated switchdev device for GW.
-			gwport = repPort
-		}
-
-		if err := util.SetStaticFDBEntry(gatewayBridge.GetBridgeName(), gwport, gatewayBridge.GetMAC()); err != nil {
+		if err := util.SetStaticFDBEntry(
+			gatewayBridge.GetBridgeName(),
+			gatewayBridge.GetStaticFDBPort(),
+			gatewayBridge.GetMAC(),
+			config.Gateway.VLANID); err != nil {
 			return nil, nil, err
 		}
 	}
