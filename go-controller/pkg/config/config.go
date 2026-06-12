@@ -651,6 +651,7 @@ type OvnKubeNodeConfig struct {
 	MgmtPortDPResourceName    string `gcfg:"mgmt-port-dp-resource-name"`
 	DPUNodeLeaseRenewInterval int    `gcfg:"dpu-node-lease-renew-interval"`
 	DPUNodeLeaseDuration      int    `gcfg:"dpu-node-lease-duration"`
+	DPUNodeLeaseNamespace     string `gcfg:"dpu-node-lease-namespace"`
 	SimulateDPU               bool   `gcfg:"simulate-dpu"`
 }
 
@@ -1871,6 +1872,12 @@ var OvnKubeNodeFlags = []cli.Flag{
 		Usage:       "Lease duration in seconds before the DPU is considered unhealthy",
 		Value:       OvnKubeNode.DPUNodeLeaseDuration,
 		Destination: &cliConfig.OvnKubeNode.DPUNodeLeaseDuration,
+	},
+	&cli.StringFlag{
+		Name:        "dpu-node-lease-namespace",
+		Usage:       "Namespace in the host cluster where the DPU node lease is stored. Defaults to ovn-config-namespace if not set.",
+		Value:       OvnKubeNode.DPUNodeLeaseNamespace,
+		Destination: &cliConfig.OvnKubeNode.DPUNodeLeaseNamespace,
 	},
 	&cli.BoolFlag{
 		Name:        "simulate-dpu",
@@ -3215,6 +3222,15 @@ func IsModeFull() bool {
 
 func IsModeDPU() bool {
 	return OvnKubeNode.Mode == types.NodeModeDPU
+}
+
+// DPUNodeLeaseNS returns the namespace for the DPU node lease,
+// falling back to OVNConfigNamespace when DPUNodeLeaseNamespace is not set.
+func DPUNodeLeaseNS() string {
+	if OvnKubeNode.DPUNodeLeaseNamespace != "" {
+		return OvnKubeNode.DPUNodeLeaseNamespace
+	}
+	return Kubernetes.OVNConfigNamespace
 }
 
 func IsModeDPUHost() bool {

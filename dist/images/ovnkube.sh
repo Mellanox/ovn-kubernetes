@@ -345,6 +345,12 @@ ovn_nohostsubnet_label=${OVN_NOHOSTSUBNET_LABEL:-""}
 # OVN_DISABLE_REQUESTEDCHASSIS - disable requested-chassis option during pod creation
 # should be set to true when dpu nodes are in the cluster for OVN Central mode
 ovn_disable_requestedchassis=${OVN_DISABLE_REQUESTEDCHASSIS:-false}
+# OVNKUBE_NODE_DPU_LEASE_RENEW_INTERVAL - interval in seconds at which the DPU updates its lease (0 to disable)
+ovnkube_node_dpu_lease_renew_interval=${OVNKUBE_NODE_DPU_LEASE_RENEW_INTERVAL:-}
+# OVNKUBE_NODE_DPU_LEASE_DURATION - lease duration in seconds before DPU is considered unhealthy
+ovnkube_node_dpu_lease_duration=${OVNKUBE_NODE_DPU_LEASE_DURATION:-}
+# OVNKUBE_NODE_LEASE_NAMESPACE - namespace in the host cluster where DPU node leases are stored
+ovnkube_node_lease_namespace=${OVNKUBE_NODE_LEASE_NAMESPACE:-}
 
 # external_ids:host-k8s-nodename is set on an Open_vSwitch enabled system if the ovnkube stack
 # should function on behalf of a different host than external_ids:hostname. This includes
@@ -2410,6 +2416,17 @@ ovnkube-controller-with-node() {
   fi
   echo "ovn_disable_requestedchassis_flag=${ovn_disable_requestedchassis_flag}"
 
+  dpu_node_lease_flags=""
+  if [[ -n ${ovnkube_node_dpu_lease_renew_interval} ]]; then
+    dpu_node_lease_flags+="--dpu-node-lease-renew-interval=${ovnkube_node_dpu_lease_renew_interval} "
+  fi
+  if [[ -n ${ovnkube_node_dpu_lease_duration} ]]; then
+    dpu_node_lease_flags+="--dpu-node-lease-duration=${ovnkube_node_dpu_lease_duration} "
+  fi
+  if [[ -n ${ovnkube_node_lease_namespace} ]]; then
+    dpu_node_lease_flags+="--dpu-node-lease-namespace=${ovnkube_node_lease_namespace} "
+  fi
+
   # Pass DPU Host cluster access credentials provided via environment variables in case of DPU
   cluster_access_opts=""
   if [[ ${ovnkube_node_mode} == "dpu" ]]; then
@@ -2482,6 +2499,7 @@ ovnkube-controller-with-node() {
     ${ovn_enable_dnsnameresolver_flag} \
     ${ovn_disable_requestedchassis_flag} \
     ${cluster_access_opts} \
+    ${dpu_node_lease_flags} \
     ${ovn_allow_icmp_netpol_flag} \
     --cluster-subnets ${net_cidr} --k8s-service-cidr=${svc_cidr} \
     --export-ovs-metrics \
@@ -3151,6 +3169,17 @@ ovn-node() {
   fi
   echo "dynamic_udn_grace_period=${dynamic_udn_grace_period}"
 
+  dpu_node_lease_flags=""
+  if [[ -n ${ovnkube_node_dpu_lease_renew_interval} ]]; then
+    dpu_node_lease_flags+="--dpu-node-lease-renew-interval=${ovnkube_node_dpu_lease_renew_interval} "
+  fi
+  if [[ -n ${ovnkube_node_dpu_lease_duration} ]]; then
+    dpu_node_lease_flags+="--dpu-node-lease-duration=${ovnkube_node_dpu_lease_duration} "
+  fi
+  if [[ -n ${ovnkube_node_lease_namespace} ]]; then
+    dpu_node_lease_flags+="--dpu-node-lease-namespace=${ovnkube_node_lease_namespace} "
+  fi
+
   echo "=============== ovn-node   --init-node"
   /usr/bin/ovnkube --init-node ${K8S_NODE} \
         ${anp_enabled_flag} \
@@ -3200,6 +3229,7 @@ ovn-node() {
         ${dynamic_udn_allocation_flag} \
         ${dynamic_udn_grace_period} \
         ${network_qos_enabled_flag} \
+        ${dpu_node_lease_flags} \
         --cluster-subnets ${net_cidr} --k8s-service-cidr=${svc_cidr} \
         --export-ovs-metrics \
         --gateway-mode=${ovn_gateway_mode} ${ovn_gateway_opts} \
