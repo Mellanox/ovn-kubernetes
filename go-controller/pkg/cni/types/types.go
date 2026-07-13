@@ -104,6 +104,8 @@ type NetConf struct {
 	// LogFileMaxAge represents the maximum number
 	// of days to retain old log files
 	LogFileMaxAge int `json:"logfile-maxage"`
+	// CNIRequestTimeout overrides the default timeout used by the CNI shim.
+	CNIRequestTimeout string `json:"cniRequestTimeout,omitempty"`
 	// Runtime arguments passed by the NPWG implementation (e.g. multus)
 	RuntimeConfig struct {
 		// see https://github.com/k8snetworkplumbingwg/device-info-spec
