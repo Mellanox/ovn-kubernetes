@@ -178,18 +178,6 @@ func NewBridgeConfiguration(intfName, nodeName,
 		if err != nil {
 			return nil, fmt.Errorf("nicToBridge failed for %s: %w", intfName, err)
 		}
-		if config.Gateway.DPUHostGatewayRepresentorInterface != "" {
-			_, stderr, repErr := util.RunOVSVsctl(
-				"--", "--may-exist", "add-port", bridgeName, config.Gateway.DPUHostGatewayRepresentorInterface,
-				"--", "set", "port", config.Gateway.DPUHostGatewayRepresentorInterface, "other-config:transient=true",
-			)
-			if repErr != nil {
-				return nil, fmt.Errorf("failed to add DPU host gateway representor %s to bridge %s: %w, stderr: %s",
-					config.Gateway.DPUHostGatewayRepresentorInterface, bridgeName, repErr, stderr)
-			}
-			klog.Infof("Adding host representor interface %s to bridge %s", config.Gateway.DPUHostGatewayRepresentorInterface, bridgeName)
-			res.gwIfaceRep = config.Gateway.DPUHostGatewayRepresentorInterface
-		}
 		res.bridgeName = bridgeName
 		res.gwIface = bridgeName
 		res.uplinkName = intfName
@@ -253,21 +241,15 @@ func NewBridgeConfiguration(intfName, nodeName,
 	return &res, nil
 }
 
-func (b *BridgeConfiguration) setDPUHostGatewayConfiguration(nodeName string) error {
+func (b *BridgeConfiguration) setDPUHostGatewayConfiguration(_ string) error {
 	if b.gwIfaceRep == "" {
-		b.gwIfaceRep = config.Gateway.DPUHostGatewayRepresentorInterface
-	}
-	if b.gwIfaceRep == "" {
-		// When the DPU host representor was not provided explicitly, discover
-		// it by inspecting the ports attached to the gateway bridge.
-		klog.V(5).Infof("No DPU host gateway representor configured, discovering host representor from bridge %s", b.bridgeName)
-		hostRep, err := util.GetDPUOps().GetDPUHostRepInterface(b.bridgeName)
+		hostRep, err := util.GetDPUHostInterface(b.bridgeName)
 		if err != nil {
 			return err
 		}
 		b.gwIfaceRep = hostRep
 	}
-	macAddress, err := util.GetDPUOps().GetHostGatewayMACAddress(b.bridgeName, nodeName)
+	macAddress, err := util.GetSriovnetOps().GetRepresentorPeerMacAddress(b.gwIfaceRep)
 	if err != nil {
 		return err
 	}
