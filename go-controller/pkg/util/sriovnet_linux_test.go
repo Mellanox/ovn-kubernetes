@@ -110,6 +110,37 @@ func TestIsAuxDeviceName(t *testing.T) {
 	}
 }
 
+func TestResolveAuxDeviceDetails(t *testing.T) {
+	mockSriovnetOps := mocks.NewSriovnetOps(t)
+	SetSriovnetOpsInst(mockSriovnetOps)
+
+	mockSriovnetOps.On("GetSfIndexByAuxDev", "mlx5_core.sf.20").Return(52, nil)
+	mockSriovnetOps.On("GetPfPciFromAux", "mlx5_core.sf.20").Return("0000:08:00.0", nil)
+
+	details, err := (&SwitchdevDPUOps{}).ResolveDeviceDetails("mlx5_core.sf.20")
+	if err != nil {
+		t.Fatalf("expected auxiliary device resolution to succeed: %v", err)
+	}
+	if details.PfId != 0 || details.FuncId != 52 || details.FunctionType != DeviceFunctionTypeSF {
+		t.Fatalf("unexpected auxiliary device details: %+v", details)
+	}
+}
+
+func TestGetSFPortRepresentor(t *testing.T) {
+	mockSriovnetOps := mocks.NewSriovnetOps(t)
+	SetSriovnetOpsInst(mockSriovnetOps)
+
+	mockSriovnetOps.On("GetSfRepresentorDPU", "0", "52").Return("en3f0c1pf0sf52", nil)
+
+	representor, err := (&SwitchdevDPUOps{}).GetPortRepresentor("0", "52", DeviceFunctionTypeSF)
+	if err != nil {
+		t.Fatalf("expected SF representor lookup to succeed: %v", err)
+	}
+	if representor != "en3f0c1pf0sf52" {
+		t.Fatalf("expected SF representor en3f0c1pf0sf52, got %s", representor)
+	}
+}
+
 func TestGetFunctionRepresentorName(t *testing.T) {
 	mockSriovnetOps := mocks.NewSriovnetOps(t)
 	SetSriovnetOpsInst(mockSriovnetOps)

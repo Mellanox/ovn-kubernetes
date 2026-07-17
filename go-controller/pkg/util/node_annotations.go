@@ -398,10 +398,18 @@ type legacyManagementPortDetails struct {
 	FuncId int `json:"FuncId"`
 }
 
+type DeviceFunctionType string
+
+const (
+	DeviceFunctionTypeVF DeviceFunctionType = "vf"
+	DeviceFunctionTypeSF DeviceFunctionType = "sf"
+)
+
 type NetworkDeviceDetails struct {
-	DeviceId string `json:"DeviceId"`
-	PfId     int    `json:"PfId"`
-	FuncId   int    `json:"FuncId"`
+	DeviceId     string             `json:"DeviceId"`
+	PfId         int                `json:"PfId"`
+	FuncId       int                `json:"FuncId"`
+	FunctionType DeviceFunctionType `json:"FunctionType,omitempty"`
 }
 
 type NetworkDeviceDetailsMap map[string]*NetworkDeviceDetails

@@ -53,10 +53,10 @@ type DPUOps interface {
 	// for the underlying platform.
 	ResolveDeviceDetails(deviceID string) (*NetworkDeviceDetails, error)
 
-	// GetPortRepresentor finds the DPU-side representor (VF representor in the case of switchdev hardware)
-	// for the given PF and function indices. On simulation this follows the
+	// GetPortRepresentor finds the DPU-side representor for the given PF,
+	// function index and function type. On simulation this follows the
 	// pattern rep<pfId>-<funcId> (e.g. "rep0-1").
-	GetPortRepresentor(pfId, funcId string) (string, error)
+	GetPortRepresentor(pfId, funcId string, functionType DeviceFunctionType) (string, error)
 
 	// GetDeviceAddress returns an opaque, platform-specific identifier for
 	// a representor interface. On switchdev hardware this is a PCI address
@@ -141,18 +141,50 @@ func (n *SwitchdevDPUOps) GetHostGatewayMACAddress(bridgeName, _ string) (net.Ha
 
 func (n *SwitchdevDPUOps) ResolveDeviceDetails(deviceID string) (*NetworkDeviceDetails, error) {
 	if IsPCIDeviceName(deviceID) {
-		return GetNetworkDeviceDetails(deviceID)
+		details, err := GetNetworkDeviceDetails(deviceID)
+		if details != nil {
+			details.FunctionType = DeviceFunctionTypeVF
+		}
+		return details, err
 	}
-	// deviceID is a netdev name – look up its PCI address via sysfs first.
-	pciAddr, err := GetDeviceIDFromNetdevice(deviceID)
+	if IsAuxDeviceName(deviceID) {
+		sfIndex, err := GetSriovnetOps().GetSfIndexByAuxDev(deviceID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get SF index for device %s: %v", deviceID, err)
+		}
+		pfPCI, err := GetSriovnetOps().GetPfPciFromAux(deviceID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get PF PCI address for device %s: %v", deviceID, err)
+		}
+		var domain, bus, device, pfIndex int
+		parsed, err := fmt.Sscanf(pfPCI, "%04x:%02x:%02x.%d", &domain, &bus, &device, &pfIndex)
+		if err != nil || parsed != 4 {
+			return nil, fmt.Errorf("failed to parse PF PCI address %s", pfPCI)
+		}
+		return &NetworkDeviceDetails{
+			DeviceId:     deviceID,
+			PfId:         pfIndex,
+			FuncId:       sfIndex,
+			FunctionType: DeviceFunctionTypeSF,
+		}, nil
+	}
+	// deviceID is a netdev name; resolve its backing PCI or auxiliary device first.
+	backingDeviceID, err := GetDeviceIDFromNetdevice(deviceID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read sysfs device link for %s: %v", deviceID, err)
 	}
-	return GetNetworkDeviceDetails(pciAddr)
+	return n.ResolveDeviceDetails(backingDeviceID)
 }
 
-func (n *SwitchdevDPUOps) GetPortRepresentor(pfId, funcId string) (string, error) {
-	return GetSriovnetOps().GetVfRepresentorDPU(pfId, funcId)
+func (n *SwitchdevDPUOps) GetPortRepresentor(pfId, funcId string, functionType DeviceFunctionType) (string, error) {
+	switch functionType {
+	case "", DeviceFunctionTypeVF:
+		return GetSriovnetOps().GetVfRepresentorDPU(pfId, funcId)
+	case DeviceFunctionTypeSF:
+		return GetSriovnetOps().GetSfRepresentorDPU(pfId, funcId)
+	default:
+		return "", fmt.Errorf("unsupported device function type %q", functionType)
+	}
 }
 
 func (n *SwitchdevDPUOps) GetDeviceAddress(repName string) (string, error) {
@@ -233,7 +265,7 @@ func (s *SimulatedDPUOps) ResolveDeviceDetails(deviceID string) (*NetworkDeviceD
 	}, nil
 }
 
-func (s *SimulatedDPUOps) GetPortRepresentor(pfId, funcId string) (string, error) {
+func (s *SimulatedDPUOps) GetPortRepresentor(pfId, funcId string, _ DeviceFunctionType) (string, error) {
 	return s.getDPURepresentor(pfId, funcId)
 }
 

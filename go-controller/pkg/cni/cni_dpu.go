@@ -50,6 +50,9 @@ func (pr *PodRequest) addDPUConnectionDetailsAnnot(k kube.Interface, podLister c
 		SandboxId:    pr.SandboxID,
 		VfNetdevName: vfNetdevName,
 	}
+	if details.FunctionType == util.DeviceFunctionTypeSF {
+		dpuConnDetails.FunctionType = details.FunctionType
+	}
 
 	return pr.updatePodDPUConnDetailsWithRetry(k, podLister, &dpuConnDetails)
 }

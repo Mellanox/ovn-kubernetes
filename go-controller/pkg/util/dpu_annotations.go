@@ -56,10 +56,11 @@ const (
 )
 
 type DPUConnectionDetails struct {
-	PfId         string `json:"pfId"`
-	VfId         string `json:"vfId"`
-	SandboxId    string `json:"sandboxId"`
-	VfNetdevName string `json:"vfNetdevName,omitempty"`
+	PfId         string             `json:"pfId"`
+	VfId         string             `json:"vfId"`
+	FunctionType DeviceFunctionType `json:"functionType,omitempty"`
+	SandboxId    string             `json:"sandboxId"`
+	VfNetdevName string             `json:"vfNetdevName,omitempty"`
 }
 
 type DPUConnectionStatus struct {

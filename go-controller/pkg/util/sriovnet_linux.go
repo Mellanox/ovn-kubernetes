@@ -38,6 +38,7 @@ type SriovnetOps interface {
 	GetPfPciFromVfPci(vfPciAddress string) (string, error)
 	GetPfPciFromAux(auxDev string) (string, error)
 	GetVfRepresentorDPU(pfID, vfIndex string) (string, error)
+	GetSfRepresentorDPU(pfID, sfIndex string) (string, error)
 	IsVfPciVfioBound(pciAddr string) bool
 	GetRepresentorPeerMacAddress(netdev string) (net.HardwareAddr, error)
 	GetRepresentorPortFlavour(netdev string) (sriovnet.PortFlavour, error)
@@ -110,6 +111,10 @@ func (defaultSriovnetOps) GetPfPciFromAux(auxDev string) (string, error) {
 
 func (defaultSriovnetOps) GetVfRepresentorDPU(pfID, vfIndex string) (string, error) {
 	return sriovnet.GetVfRepresentorDPU(pfID, vfIndex)
+}
+
+func (defaultSriovnetOps) GetSfRepresentorDPU(pfID, sfIndex string) (string, error) {
+	return sriovnet.GetSfRepresentorDPU(pfID, sfIndex)
 }
 
 func (defaultSriovnetOps) GetRepresentorPeerMacAddress(netdev string) (net.HardwareAddr, error) {

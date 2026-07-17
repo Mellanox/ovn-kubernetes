@@ -128,7 +128,7 @@ func NewUDNManagementPortController(
 		c.ports[netdevPort] = newUDNManagementPortNetdev(cfg, mgmtIfName, mpdev.DeviceId)
 		c.ports[representorPort] = newUDNManagementPortRep(cfg, repDeviceName)
 	case types.NodeModeDPU:
-		repDeviceName, err := util.GetDPUOps().GetPortRepresentor(fmt.Sprintf("%d", mpdev.PfId), fmt.Sprintf("%d", mpdev.FuncId))
+		repDeviceName, err := util.GetDPUOps().GetPortRepresentor(fmt.Sprintf("%d", mpdev.PfId), fmt.Sprintf("%d", mpdev.FuncId), util.DeviceFunctionTypeVF)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get management port representor for pfID %v vfID %v network %s: %v",
 				mpdev.PfId, mpdev.FuncId, netInfo.GetNetworkName(), err)
@@ -259,7 +259,7 @@ func syncUDNManagementPort(cfg *udnManagementPortConfig, mgmtIfName string, mpde
 			}
 		}
 	} else if config.IsModeDPU() && ovsRepIfName != "" {
-		repDeviceName, _ := util.GetDPUOps().GetPortRepresentor(fmt.Sprintf("%d", mpdev.PfId), fmt.Sprintf("%d", mpdev.FuncId))
+		repDeviceName, _ := util.GetDPUOps().GetPortRepresentor(fmt.Sprintf("%d", mpdev.PfId), fmt.Sprintf("%d", mpdev.FuncId), util.DeviceFunctionTypeVF)
 		if repDeviceName != ovsRepIfName {
 			err = DeleteManagementPortRepInterface(cfg.GetNetworkName(), ovsRepIfName, ovsRepIfName)
 			if err != nil {

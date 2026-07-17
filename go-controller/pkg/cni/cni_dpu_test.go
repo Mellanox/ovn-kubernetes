@@ -86,6 +86,29 @@ var _ = Describe("cni_dpu tests", func() {
 
 		})
 
+		It("Sets SF dpu.connection-details pod annotation", func() {
+			var err error
+			pr.CNIConf.DeviceID = "mlx5_core.sf.20"
+			fakeSriovnetOps.On("GetSfIndexByAuxDev", pr.CNIConf.DeviceID).Return(52, nil)
+			fakeSriovnetOps.On("GetPfPciFromAux", pr.CNIConf.DeviceID).Return("0000:08:00.0", nil)
+			dpuCd := util.DPUConnectionDetails{
+				PfId:         "0",
+				VfId:         "52",
+				FunctionType: util.DeviceFunctionTypeSF,
+				SandboxId:    pr.SandboxID,
+				VfNetdevName: "eth4",
+			}
+			podLister.On("Pods", pr.PodNamespace).Return(&podNamespaceLister)
+			podNamespaceLister.On("Get", pr.PodName).Return(pod, nil)
+			cpod := pod.DeepCopy()
+			cpod.Annotations, err = util.MarshalPodDPUConnDetails(cpod.Annotations, &dpuCd, ovntypes.DefaultNetworkName)
+			Expect(err).ToNot(HaveOccurred())
+			fakeKubeInterface.On("PatchPodStatusAnnotations", pod, cpod).Return(nil)
+
+			err = pr.addDPUConnectionDetailsAnnot(&fakeKubeInterface, &podLister, "eth4")
+			Expect(err).ToNot(HaveOccurred())
+		})
+
 		It("Fails if DeviceID is not present in CNI config", func() {
 			err := pr.addDPUConnectionDetailsAnnot(&fakeKubeInterface, &podLister, "")
 			Expect(err).To(HaveOccurred())
